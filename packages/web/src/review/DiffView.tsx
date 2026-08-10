@@ -1,5 +1,5 @@
 import { useEffect, useState, Fragment } from "react";
-import { toSplitRows } from "@syl/core";
+import { toSplitRows, getLanguageForFile } from "@syl/core";
 import type {
   DiffFile,
   DiffLine,
@@ -9,6 +9,7 @@ import type {
   ReviewCommentSide,
 } from "@syl/core";
 import FindingCard, { type FindingAnchorState } from "./FindingCard";
+import GenerateButton from "../components/GenerateButton";
 import AnnotationNote from "./AnnotationNote";
 import CommentComposer from "./CommentComposer";
 import DraftCommentCard from "./DraftCommentCard";
@@ -167,6 +168,26 @@ function targetKey(target: CommentTarget): string {
   return `${target.side}:${target.line}`;
 }
 
+/** Generating annotations for a file as it was before the pull request. */
+export interface GenerateOriginal {
+  /** Which model will run, for the button's tooltip. */
+  modelLabel: string;
+  run: (file: DiffFile) => Promise<void>;
+}
+
+/**
+ * Only a modified file has an original version to annotate — an added file had
+ * none — and only a language with a tree-sitter config has semantic paths to
+ * hang annotations on, the same condition that hides "Generate File".
+ */
+function hasAnnotatableOriginal(file: DiffFile): boolean {
+  return (
+    file.status === "modified" &&
+    !file.binary &&
+    getLanguageForFile(file.path) !== undefined
+  );
+}
+
 export interface CommentHandlers {
   comments: DraftComment[];
   onAddComment: (input: {
@@ -189,6 +210,7 @@ interface FileDiffProps extends CommentHandlers {
   activeFindingId: string | null;
   viewMode: DiffViewMode;
   notesCollapsed: boolean;
+  generateOriginal?: GenerateOriginal;
   onNavigate?: (target: LinkTarget) => void;
 }
 
@@ -200,6 +222,7 @@ function FileDiff({
   activeFindingId,
   viewMode,
   notesCollapsed,
+  generateOriginal,
   onNavigate,
   comments,
   onAddComment,
@@ -383,11 +406,20 @@ function FileDiff({
         >
           {collapsed ? "▸" : "▾"}
         </button>
-        <span className="font-mono text-xs text-gray-200 truncate flex-1">
+        <span className="font-mono text-xs text-gray-200 truncate min-w-0">
           {file.status === "renamed" && file.oldPath
             ? `${file.oldPath} → ${file.path}`
             : file.path}
         </span>
+        {generateOriginal && hasAnnotatableOriginal(file) && (
+          <GenerateButton
+            label="Annotate original"
+            className="whitespace-nowrap"
+            title={`Generate syl annotations for ${file.path} as it was before this pull request, with ${generateOriginal.modelLabel}, and save them to .syl/`}
+            onClick={() => generateOriginal.run(file)}
+          />
+        )}
+        <span className="flex-1" />
         {fileDraftCount > 0 && (
           <span className="text-[10px] px-1.5 py-0.5 rounded border border-amber-500/40 text-amber-300 whitespace-nowrap">
             {fileDraftCount} pending
@@ -594,6 +626,7 @@ export default function DiffView({
   viewMode,
   annotationData,
   notesCollapsed,
+  generateOriginal,
   onNavigate,
   ...handlers
 }: {
@@ -603,6 +636,7 @@ export default function DiffView({
   viewMode: DiffViewMode;
   annotationData: DiffAnnotationData;
   notesCollapsed: boolean;
+  generateOriginal?: GenerateOriginal;
   onNavigate?: (target: LinkTarget) => void;
 } & CommentHandlers) {
   const indexed = findings.map((finding, index) => ({ finding, index }));
@@ -628,6 +662,7 @@ export default function DiffView({
           activeFindingId={activeFindingId}
           viewMode={viewMode}
           notesCollapsed={notesCollapsed}
+          generateOriginal={generateOriginal}
           onNavigate={onNavigate}
           {...handlers}
         />

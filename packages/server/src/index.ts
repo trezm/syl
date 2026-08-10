@@ -44,7 +44,10 @@ app.route("/api/files", fileRoutes(projectRoot));
 app.route("/api/annotations", annotationRoutes(projectRoot, grammarWasmDir, treeSitterWasmDir));
 app.route("/api/generate", generateRoutes(projectRoot, grammarWasmDir, treeSitterWasmDir));
 app.route("/api/links", linkRoutes(projectRoot, projectIndex));
-app.route("/api/review", reviewRoutes(projectRoot));
+app.route(
+  "/api/review",
+  reviewRoutes(projectRoot, grammarWasmDir, treeSitterWasmDir)
+);
 
 // Serve WASM files — check tree-sitter runtime dir first, then grammar dir
 app.get("/wasm/:file", async (c) => {

@@ -54,8 +54,13 @@ async function pooled<T>(
  * Annotations live in the working copy, not in the pull request, so this is
  * best-effort: a file the local checkout doesn't have (or a semantic path that
  * has moved since) simply contributes nothing.
+ *
+ * Bumping `nonce` reloads them — the diff generates annotations of its own.
  */
-export function useDiffAnnotations(files: DiffFile[]): DiffAnnotationData {
+export function useDiffAnnotations(
+  files: DiffFile[],
+  nonce = 0
+): DiffAnnotationData {
   const [data, setData] = useState<DiffAnnotationData>(EMPTY);
 
   useEffect(() => {
@@ -135,7 +140,7 @@ export function useDiffAnnotations(files: DiffFile[]): DiffAnnotationData {
     return () => {
       cancelled = true;
     };
-  }, [files]);
+  }, [files, nonce]);
 
   return data;
 }

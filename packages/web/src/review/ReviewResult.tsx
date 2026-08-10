@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   parseUnifiedDiff,
   diffTotals,
@@ -14,15 +14,22 @@ import DiffView, {
   findingDomId,
   type DiffViewMode,
   type CommentHandlers,
+  type GenerateOriginal,
 } from "./DiffView";
 import type { FindingAnchorState } from "./FindingCard";
 import SubmitReviewPanel from "./SubmitReviewPanel";
 import { useDiffAnnotations } from "./useDiffAnnotations";
 import {
+  useSelectedModel,
+  type AvailableModel,
+} from "../components/ModelSelector";
+import {
   addReviewComment,
   updateReviewComment,
   deleteReviewComment,
   submitReview,
+  checkGenerateStatus,
+  generateOriginalAnnotations,
 } from "../api";
 import { SEVERITY_STYLE, SEVERITY_DOT, RISK_STYLE } from "./severity";
 
@@ -106,7 +113,9 @@ export default function ReviewResult({
     () => sortFindings(run.review?.findings ?? []),
     [run.review]
   );
-  const annotationData = useDiffAnnotations(files);
+  // Bumped after a generation run, so its annotations appear in the diff.
+  const [annotationNonce, setAnnotationNonce] = useState(0);
+  const annotationData = useDiffAnnotations(files, annotationNonce);
   const annotationCount = useMemo(
     () =>
       Object.values(annotationData.byFile).reduce(
@@ -115,6 +124,40 @@ export default function ReviewResult({
       ),
     [annotationData]
   );
+
+  // The review tab has no model picker of its own; it follows whatever the
+  // annotate tab is set to, which is where the picker lives.
+  const [models, setModels] = useState<AvailableModel[]>([]);
+  const [defaultModel, setDefaultModel] = useState<string | null>(null);
+  useEffect(() => {
+    checkGenerateStatus()
+      .then((status) => {
+        setModels(status.models ?? []);
+        setDefaultModel(status.defaultModel ?? null);
+      })
+      .catch(() => {});
+  }, []);
+  const { model } = useSelectedModel(models, defaultModel);
+
+  const generateOriginal: GenerateOriginal | undefined = useMemo(() => {
+    if (!model) return undefined;
+    return {
+      modelLabel: models.find((m) => m.id === model)?.label ?? model,
+      run: async (file) => {
+        const { count } = await generateOriginalAnnotations(
+          run.id,
+          file.path,
+          model
+        );
+        setAnnotationNonce((n) => n + 1);
+        // The button has nowhere to report success, so an empty run — which
+        // looks identical to a failure — is surfaced as the error it may be.
+        if (count === 0) {
+          throw new Error("The model returned no annotations.");
+        }
+      },
+    };
+  }, [model, models, run.id]);
 
   const commentTargets = useMemo(() => diffCommentTargets(files), [files]);
 
@@ -454,6 +497,7 @@ export default function ReviewResult({
               viewMode={viewMode}
               annotationData={annotationData}
               notesCollapsed={notesCollapsed}
+              generateOriginal={generateOriginal}
               onNavigate={onNavigate}
               {...commentHandlers}
             />

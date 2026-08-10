@@ -62,6 +62,12 @@ export interface PullRequestMeta {
   title: string;
   body: string;
   base: string;
+  /**
+   * Commit the pull request is based on — the exact tree a file's "original"
+   * version comes from. Null on runs stored before this was recorded, where the
+   * base branch name is the only handle left.
+   */
+  baseSha: string | null;
   head: string;
   author: string;
   url: string;

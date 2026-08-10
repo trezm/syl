@@ -42,6 +42,12 @@ export interface GenerateOptions {
   store: AnnotationStore;
   /** If set, generate for a single element; otherwise file-wide */
   semanticPath?: string;
+  /**
+   * Set when `fileContent` is not what sits on disk — a pull request's base
+   * version of the file, say. Both backends can open the working copy
+   * themselves, so the prompt has to say which version is the one to describe.
+   */
+  contentNote?: string;
 }
 
 function formatSemanticTree(pathResult: SemanticPathResult): string {
@@ -58,6 +64,14 @@ function formatSemanticTree(pathResult: SemanticPathResult): string {
   return lines.join("\n") || "(no semantic nodes)";
 }
 
+/** The task prompt, plus a warning when the file on disk is a different version. */
+function systemPromptFor(options: GenerateOptions): string {
+  const base = options.semanticPath
+    ? singleElementPrompt(options.filePath, options.semanticPath)
+    : fileWidePrompt(options.filePath);
+  return options.contentNote ? `${base}\n\n${options.contentNote}` : base;
+}
+
 /**
  * The CLI backends bring their own file-reading tools and run inside the
  * project, so instead of driving our tool loop we hand them the semantic tree
@@ -67,9 +81,19 @@ async function generateViaCli(
   options: GenerateOptions,
   provider: "anthropic" | "openai"
 ): Promise<SaveAnnotationEntry[]> {
-  const systemPrompt = options.semanticPath
-    ? singleElementPrompt(options.filePath, options.semanticPath)
-    : fileWidePrompt(options.filePath);
+  const systemPrompt = systemPromptFor(options);
+
+  // Reading the file is how the CLI normally sees the code — but when it is a
+  // version that isn't on disk, the only copy is the one inlined here.
+  const source = options.contentNote
+    ? `The version to annotate, in full:
+
+\`\`\`
+${options.fileContent}
+\`\`\`
+
+Treat the content above as ${options.filePath}. The copy on disk is a different version of it — read other files in this project with your own tools for context, but not that one.`
+    : `You can read ${options.filePath} and any related file in this project with your own tools.`;
 
   const userPrompt = `File: ${options.filePath}
 
@@ -82,7 +106,7 @@ ${
     : "Annotate the most important elements. Skip trivial ones."
 }
 
-You can read ${options.filePath} and any related file in this project with your own tools. Do not call a save_annotations tool — return the annotations as JSON.`;
+${source} Do not call a save_annotations tool — return the annotations as JSON.`;
 
   const result = (await completeJsonViaCli(CLI_FOR_PROVIDER[provider], {
     model: options.model,
@@ -125,9 +149,9 @@ export async function generateAnnotations(
   if (backend === "cli") {
     saved = await generateViaCli(options, modelInfo.provider);
   } else {
-    const systemPrompt = options.semanticPath
-      ? singleElementPrompt(options.filePath, options.semanticPath)
-      : fileWidePrompt(options.filePath);
+    // get_node_source serves `fileContent`, so the tool loop already sees the
+    // right version; the note keeps get_file_content from second-guessing it.
+    const systemPrompt = systemPromptFor(options);
 
     const context: ToolContext = {
       projectRoot: options.projectRoot,
