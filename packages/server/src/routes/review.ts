@@ -1,12 +1,22 @@
 import { Hono } from "hono";
+import path from "node:path";
 import type { ReviewCommentSide, ReviewEvent } from "@syl/core";
+import {
+  AnnotationStore,
+  getLanguageForFile,
+  parseUnifiedDiff,
+} from "@syl/core";
 import {
   listRemotes,
   listPullRequests,
+  fetchFileAtRef,
   describeGhError,
 } from "../review/github.js";
 import { ReviewRunner } from "../review/runner.js";
 import { defaultReviewModels, resolveModel } from "../ai/models.js";
+import { generateAnnotations } from "../ai/generate.js";
+import { nodeFs } from "../util/node-fs.js";
+import { semanticPathsFor } from "../util/semantic-paths.js";
 
 function messageFor(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -17,9 +27,14 @@ function statusFor(e: unknown): 400 | 404 {
   return /not found/i.test(messageFor(e)) ? 404 : 400;
 }
 
-export function reviewRoutes(projectRoot: string) {
+export function reviewRoutes(
+  projectRoot: string,
+  wasmDir: string,
+  treeSitterWasmDir: string
+) {
   const app = new Hono();
   const runner = new ReviewRunner(projectRoot);
+  const store = new AnnotationStore(path.join(projectRoot, ".syl"), nodeFs());
 
   // GET /api/review/remotes — git remotes of the project syl is pointed at
   app.get("/remotes", async (c) => {
@@ -156,6 +171,100 @@ export function reviewRoutes(projectRoot: string) {
       return c.json({ ok: true });
     } catch (e) {
       return c.json({ error: messageFor(e) }, statusFor(e));
+    }
+  });
+
+  // POST /api/review/:id/generate-original — annotate a file as it was before
+  // this pull request. Annotations are saved to .syl/ under the file's current
+  // path, exactly like a generation run from the annotate tab.
+  app.post("/:id/generate-original", async (c) => {
+    const body = await c.req.json<{ file?: string; model?: string }>();
+
+    const run = runner.get(c.req.param("id"));
+    if (!run) return c.json({ error: "run not found" }, 404);
+    if (!body.file || !body.model) {
+      return c.json({ error: "file and model are required" }, 400);
+    }
+    if (!resolveModel(body.model)) {
+      return c.json({ error: `Unknown model "${body.model}"` }, 400);
+    }
+    if (!run.diff) {
+      return c.json({ error: "The diff for this run is not available yet." }, 400);
+    }
+
+    const file = parseUnifiedDiff(run.diff).find((f) => f.path === body.file);
+    if (!file) {
+      return c.json(
+        { error: `"${body.file}" is not part of this pull request's diff.` },
+        400
+      );
+    }
+    // Only a modified file has an original worth annotating: an added one had
+    // none, and a deleted one has nothing left for the annotations to hang on.
+    if (file.status !== "modified" || file.binary) {
+      return c.json(
+        {
+          error: `"${file.path}" is ${file.binary ? "binary" : file.status}, so it has no original version to annotate.`,
+        },
+        400
+      );
+    }
+
+    if (!getLanguageForFile(file.path)) {
+      return c.json(
+        { error: "Unsupported file type for annotation generation" },
+        400
+      );
+    }
+
+    // Prefer the exact base commit; the branch name is the fallback for runs
+    // stored before syl recorded it.
+    const refs = [run.meta?.baseSha, run.meta?.base].filter(
+      (ref): ref is string => typeof ref === "string" && ref.length > 0
+    );
+    if (refs.length === 0) {
+      return c.json(
+        { error: "This run has no base ref recorded — re-run the review." },
+        400
+      );
+    }
+
+    try {
+      const content = await fetchFileAtRef({
+        repo: run.repo,
+        remote: run.remote,
+        refs,
+        filePath: file.oldPath ?? file.path,
+        projectRoot,
+      });
+
+      const pathResult = await semanticPathsFor(
+        file.path,
+        content,
+        wasmDir,
+        treeSitterWasmDir
+      );
+      if (pathResult.roots.length === 0) {
+        return c.json(
+          { error: `No annotatable declarations in the original ${file.path}.` },
+          400
+        );
+      }
+
+      const result = await generateAnnotations({
+        model: body.model,
+        filePath: file.path,
+        fileContent: content,
+        pathResult,
+        projectRoot,
+        store,
+        contentNote: `You are annotating ${file.path} as it was before pull request #${run.number}, not as it is now. Describe what that version does, without mentioning the pull request or what it changes.`,
+      });
+
+      return c.json({ ok: true, count: result.count });
+    } catch (e) {
+      console.error(`Original-file generation for run ${run.id} failed:`, e);
+      return c.json({ error: describeGhError(e) }, 500);
     }
   });
 

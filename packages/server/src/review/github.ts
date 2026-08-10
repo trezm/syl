@@ -88,6 +88,7 @@ export async function fetchPullRequestMeta(
     body: string | null;
     author: { login: string } | null;
     baseRefName: string;
+    baseRefOid: string | null;
     headRefName: string;
     url: string;
   }>(
@@ -98,7 +99,7 @@ export async function fetchPullRequestMeta(
       "-R",
       repo,
       "--json",
-      "title,body,author,baseRefName,headRefName,url",
+      "title,body,author,baseRefName,baseRefOid,headRefName,url",
     ],
     projectRoot
   );
@@ -109,10 +110,77 @@ export async function fetchPullRequestMeta(
     title: meta.title,
     body: meta.body ?? "",
     base: meta.baseRefName,
+    baseSha: meta.baseRefOid ?? null,
     head: meta.headRefName,
     author: meta.author?.login ?? "unknown",
     url: meta.url,
   };
+}
+
+/** A ref that names a commit directly, rather than a branch that can move. */
+function isCommitish(ref: string): boolean {
+  return /^[0-9a-f]{7,40}$/i.test(ref);
+}
+
+/** `contents` takes a path, not a query value — each segment is escaped alone. */
+function encodePath(filePath: string): string {
+  return filePath.split("/").map(encodeURIComponent).join("/");
+}
+
+/**
+ * The contents of `filePath` as of the first of `refs` that resolves.
+ *
+ * The local checkout is tried first — the base commit of a pull request is
+ * usually already fetched, and `git show` costs nothing — with GitHub as the
+ * fallback for a clone that has never seen it. Branch names are also tried
+ * under the remote, since a base branch often has no local ref at all.
+ */
+export async function fetchFileAtRef(options: {
+  repo: string;
+  remote: string;
+  /** Candidate refs, most exact first (base commit, then base branch). */
+  refs: string[];
+  filePath: string;
+  projectRoot: string;
+}): Promise<string> {
+  const { repo, remote, refs, filePath, projectRoot } = options;
+  const localRefs = refs.flatMap((ref) =>
+    isCommitish(ref) ? [ref] : [ref, `${remote}/${ref}`]
+  );
+
+  for (const ref of localRefs) {
+    try {
+      return await run("git", ["show", `${ref}:${filePath}`], {
+        cwd: projectRoot,
+      });
+    } catch {
+      // Ref or path not in this clone — try the next candidate.
+    }
+  }
+
+  let lastError: unknown = null;
+  for (const ref of refs) {
+    try {
+      return await run(
+        "gh",
+        [
+          "api",
+          "-H",
+          "Accept: application/vnd.github.raw",
+          `repos/${repo}/contents/${encodePath(filePath)}?ref=${encodeURIComponent(ref)}`,
+        ],
+        { cwd: projectRoot }
+      );
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  throw new Error(
+    `Could not read "${filePath}" at ${refs.join(" or ")} — neither this checkout nor GitHub has it.${
+      lastError ? ` (${describeGhError(lastError)})` : ""
+    }`
+  );
 }
 
 export async function fetchPullRequestDiff(

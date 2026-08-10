@@ -258,6 +258,25 @@ export async function generateAnnotation(
   return res.json();
 }
 
+/**
+ * Annotates a file in a review as it was *before* the pull request. The result
+ * lands in `.syl/` under the file's current path, like any other generation.
+ */
+export async function generateOriginalAnnotations(
+  runId: string,
+  file: string,
+  model: string
+): Promise<{ ok: boolean; count: number }> {
+  const res = await fetch(`/api/review/${runId}/generate-original`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ file, model }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Generation failed");
+  return data;
+}
+
 export async function generateFileAnnotations(
   file: string,
   model: string

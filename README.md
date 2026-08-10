@@ -40,6 +40,28 @@ the pull request, so this is best-effort: a file your checkout doesn't have (or 
 symbol that has since moved) simply contributes nothing. Editing stays in the
 annotate tab — the review diff shows them read-only.
 
+### Annotating what the code used to be
+
+A file you have never annotated is hardest to review, because nothing in the
+diff says what the code was *supposed* to do before the pull request touched it.
+**Annotate original**, next to the file name in the diff header, fills that in:
+it runs the usual generation over that file **as it was at the pull request's
+base commit**, and saves the result to `.syl/` like any other generation. The
+annotations then show up inline in the diff, next to the lines being changed.
+
+The button is only there for a file the pull request *modified* — an added file
+has no earlier version, a deleted one has nothing left to hang annotations on —
+and only for a language with a tree-sitter config, the same rule that hides
+**Generate File**. The original is read with `git show` when your checkout has
+the base commit and fetched from GitHub when it doesn't, so it doesn't matter
+which branch you happen to have checked out.
+
+Two consequences of storing them like any other annotation. They describe the
+old code, so anything the pull request rewrote is documented as it *was* until
+you edit it; and a symbol the pull request renamed or removed becomes an orphan,
+which is exactly what an annotation whose node is gone always looks like. The
+model used is whichever one the annotate tab's picker is set to.
+
 Requires the [GitHub CLI](https://cli.github.com/) on your `PATH` and
 authenticated (`gh auth login`) — it is used for `pr list`, `pr view`,
 `pr diff`, and posting reviews.

@@ -5,6 +5,8 @@ interface GenerateButtonProps {
   onClick: () => Promise<void>;
   className?: string;
   size?: "sm" | "md";
+  /** Worth setting where the label alone doesn't say what will be generated. */
+  title?: string;
 }
 
 export default function GenerateButton({
@@ -12,6 +14,7 @@ export default function GenerateButton({
   onClick,
   className = "",
   size = "sm",
+  title,
 }: GenerateButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +43,7 @@ export default function GenerateButton({
         className={`${sizeClasses} bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 rounded text-purple-300 disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
         onClick={handleClick}
         disabled={loading}
+        title={title}
       >
         {loading ? (
           <span className="inline-flex items-center gap-1">

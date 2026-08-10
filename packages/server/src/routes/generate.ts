@@ -1,13 +1,9 @@
 import { Hono } from "hono";
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
-  AnnotationStore,
-  getLanguageForFile,
-  createParser,
-  buildSemanticPaths,
-} from "@syl/core";
+import { AnnotationStore, getLanguageForFile } from "@syl/core";
 import { nodeFs } from "../util/node-fs.js";
+import { semanticPathsFor } from "../util/semantic-paths.js";
 import { generateAnnotations } from "../ai/generate.js";
 import { listModels, defaultModelId, resolveModel } from "../ai/models.js";
 
@@ -55,10 +51,12 @@ export function generateRoutes(
     try {
       const filePath = path.resolve(projectRoot, file);
       const fileContent = await fs.readFile(filePath, "utf-8");
-      const wasmPath = path.join(wasmDir, langConfig.wasmFile);
-      const parser = await createParser(wasmPath, treeSitterWasmDir);
-      const tree = parser.parse(fileContent);
-      const pathResult = buildSemanticPaths(tree, fileContent, langConfig);
+      const pathResult = await semanticPathsFor(
+        file,
+        fileContent,
+        wasmDir,
+        treeSitterWasmDir
+      );
 
       if (semanticPath && !pathResult.pathMap.has(semanticPath)) {
         return c.json({ error: `Semantic path "${semanticPath}" not found in file` }, 404);
