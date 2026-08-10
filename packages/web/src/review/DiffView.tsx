@@ -16,6 +16,12 @@ import DraftCommentCard from "./DraftCommentCard";
 import type { DiffAnnotation, DiffAnnotationData } from "./useDiffAnnotations";
 import type { ResolvedLinks } from "../components/AnnotationBody";
 import { useDiffHighlight, type DiffHighlight, type Token } from "./highlight";
+import {
+  useDiffExpansion,
+  type GapEnd,
+  type GapView,
+  type LineRange,
+} from "./useDiffExpansion";
 import { SEVERITY_DOT } from "./severity";
 
 export type DiffViewMode = "unified" | "split";
@@ -117,6 +123,130 @@ function CodeCell({
   );
 }
 
+/** A line from outside the diff, pulled in by expanding a gap. */
+function ContextRow({
+  line,
+  tokens,
+  viewMode,
+}: {
+  line: DiffLine;
+  tokens?: Token[];
+  viewMode: DiffViewMode;
+}) {
+  // Tinted, so it stays clear which lines this pull request actually touched.
+  return (
+    <tr className="bg-gray-900/40">
+      <Gutter value={line.oldLine} />
+      {viewMode === "split" ? (
+        <>
+          <CodeCell line={line} tokens={tokens} divider />
+          <Gutter value={line.newLine} />
+        </>
+      ) : (
+        <Gutter value={line.newLine} />
+      )}
+      <CodeCell line={line} tokens={tokens} />
+    </tr>
+  );
+}
+
+interface GapControl {
+  key: string;
+  label: string;
+  title: string;
+  range: LineRange;
+  end: GapEnd;
+}
+
+function gapControls(view: GapView): GapControl[] {
+  const controls: GapControl[] = [];
+  const size = (range: LineRange) => range.end - range.start + 1;
+  if (view.up) {
+    controls.push({
+      key: "up",
+      label: "↑",
+      title: `Show ${size(view.up)} lines above`,
+      range: view.up,
+      end: "tail",
+    });
+  }
+  if (view.all) {
+    controls.push({
+      key: "all",
+      label: "↕",
+      title: `Show all ${size(view.all)} hidden lines`,
+      range: view.all,
+      end: "head",
+    });
+  }
+  if (view.down) {
+    controls.push({
+      key: "down",
+      label: "↓",
+      title: `Show ${size(view.down)} lines below`,
+      range: view.down,
+      end: "head",
+    });
+  }
+  return controls;
+}
+
+/**
+ * Stands in for the code between two hunks: the hunk header, plus controls for
+ * pulling the lines it hides into view.
+ */
+function GapRow({
+  columns,
+  header,
+  view,
+  onExpand,
+}: {
+  columns: number;
+  /** The `@@` line of the hunk below, or null past the last hunk. */
+  header: string | null;
+  view?: GapView;
+  onExpand?: (range: LineRange, end: GapEnd) => void;
+}) {
+  const controls = view && !view.loading ? gapControls(view) : [];
+
+  return (
+    <tr className="bg-sky-500/5">
+      <td
+        colSpan={columns}
+        className="px-3 py-1 text-[11px] text-sky-300/70 border-y border-gray-800"
+      >
+        <div className="flex items-center gap-2">
+          {controls.length > 0 && (
+            <span className="flex items-center gap-0.5">
+              {controls.map((control) => (
+                <button
+                  key={control.key}
+                  className="px-1.5 leading-4 rounded border border-sky-500/40 bg-sky-500/10 text-sky-200 hover:bg-sky-500/25"
+                  title={control.title}
+                  aria-label={control.title}
+                  onClick={() => onExpand?.(control.range, control.end)}
+                >
+                  {control.label}
+                </button>
+              ))}
+            </span>
+          )}
+          {view?.loading && <span className="text-gray-500">Expanding…</span>}
+          {header && <span className="font-mono truncate">{header}</span>}
+          {view && view.remaining !== null && view.remaining > 0 && (
+            <span className="text-gray-600 whitespace-nowrap">
+              {view.remaining} hidden line{view.remaining === 1 ? "" : "s"}
+            </span>
+          )}
+          {view?.error && (
+            <span className="text-red-300 truncate">{view.error}</span>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 /** Tokens for a line, or undefined while the file's grammar is still loading. */
 function tokensFor(
   highlight: DiffHighlight | null,
@@ -204,6 +334,8 @@ export interface CommentHandlers {
 
 interface FileDiffProps extends CommentHandlers {
   file: DiffFile;
+  /** The review this diff belongs to; expanding reads files through it. */
+  runId: string;
   findings: { finding: Finding; index: number }[];
   annotations: DiffAnnotation[];
   links: ResolvedLinks;
@@ -216,6 +348,7 @@ interface FileDiffProps extends CommentHandlers {
 
 function FileDiff({
   file,
+  runId,
   findings,
   annotations,
   links,
@@ -240,7 +373,8 @@ function FileDiff({
   const [composing, setComposing] = useState<CommentTarget | null>(null);
   const [saving, setSaving] = useState(false);
   const [composeError, setComposeError] = useState<string | null>(null);
-  const highlight = useDiffHighlight(file);
+  const expansion = useDiffExpansion(runId, file);
+  const highlight = useDiffHighlight(file, expansion.extraLines);
 
   const columns = viewMode === "split" ? 4 : 3;
 
@@ -396,6 +530,50 @@ function FileDiff({
     setComposing(target);
   };
 
+  const expandedRows = (lines: DiffLine[], prefix: string) =>
+    lines.map((line) => (
+      <ContextRow
+        key={`${prefix}-${line.newLine}`}
+        line={line}
+        tokens={tokensFor(highlight, line)}
+        viewMode={viewMode}
+      />
+    ));
+
+  /**
+   * Everything between two hunks: lines already expanded from the top of the
+   * gap, the control row, then lines expanded from the bottom of it — so a
+   * revealed stretch always sits against the hunk it was opened from. `header`
+   * is null for the gap past the last hunk, which has no hunk to head.
+   */
+  const gapSection = (index: number, header: string | null) => {
+    const view = expansion.gaps.get(index);
+    if (!view) return header ? <GapRow columns={columns} header={header} /> : null;
+
+    const hasControls =
+      view.loading ||
+      view.error !== null ||
+      gapControls(view).length > 0;
+    if (!header && !hasControls && view.head.length === 0 && view.tail.length === 0) {
+      return null;
+    }
+
+    return (
+      <>
+        {expandedRows(view.head, `gap-head-${index}`)}
+        {(header || hasControls) && (
+          <GapRow
+            columns={columns}
+            header={header}
+            view={view}
+            onExpand={(range, end) => expansion.expand(view.gap, range, end)}
+          />
+        )}
+        {expandedRows(view.tail, `gap-tail-${index}`)}
+      </>
+    );
+  };
+
   return (
     <div className="border border-gray-800 rounded-md overflow-hidden mb-4 bg-gray-950">
       <div className="flex items-center gap-2 px-3 py-2 bg-gray-900/70 border-b border-gray-800 sticky top-0 z-10">
@@ -524,14 +702,7 @@ function FileDiff({
               <tbody>
                 {file.hunks.map((hunk, hunkIndex) => (
                   <Fragment key={hunkIndex}>
-                    <tr className="bg-sky-500/5">
-                      <td
-                        colSpan={columns}
-                        className="px-3 py-1 text-[11px] text-sky-300/70 border-y border-gray-800"
-                      >
-                        {hunk.header}
-                      </td>
-                    </tr>
+                    {gapSection(hunkIndex, hunk.header)}
                     {viewMode === "split"
                       ? toSplitRows(hunk.lines).map((row, rowIndex) => {
                           // A context line is the same object on both sides, so
@@ -610,6 +781,7 @@ function FileDiff({
                         })}
                   </Fragment>
                 ))}
+                {gapSection(file.hunks.length, null)}
               </tbody>
             </table>
           )}
@@ -621,6 +793,7 @@ function FileDiff({
 
 export default function DiffView({
   files,
+  runId,
   findings,
   activeFindingId,
   viewMode,
@@ -631,6 +804,7 @@ export default function DiffView({
   ...handlers
 }: {
   files: DiffFile[];
+  runId: string;
   findings: Finding[];
   activeFindingId: string | null;
   viewMode: DiffViewMode;
@@ -656,6 +830,7 @@ export default function DiffView({
         <FileDiff
           key={file.path}
           file={file}
+          runId={runId}
           findings={byFile.get(file.path) ?? []}
           annotations={annotationData.byFile[file.path] ?? []}
           links={annotationData.linksByFile[file.path] ?? {}}

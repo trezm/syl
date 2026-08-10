@@ -168,6 +168,32 @@ export async function fetchReviewRun(id: string): Promise<ReviewRun> {
   return data.run;
 }
 
+export interface FileContext {
+  path: string;
+  start: number;
+  end: number;
+  lines: string[];
+  totalLines: number;
+}
+
+/** Lines the diff leaves out, read at the commit under review. */
+export async function fetchReviewFileContext(
+  runId: string,
+  path: string,
+  start: number,
+  end: number
+): Promise<FileContext> {
+  const query = new URLSearchParams({
+    path,
+    start: String(start),
+    end: String(end),
+  });
+  const res = await fetch(`/api/review/${runId}/context?${query}`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to expand the diff");
+  return data;
+}
+
 export async function addReviewComment(
   runId: string,
   input: {

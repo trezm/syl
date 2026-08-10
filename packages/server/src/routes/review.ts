@@ -12,7 +12,7 @@ import {
   fetchFileAtRef,
   describeGhError,
 } from "../review/github.js";
-import { ReviewRunner } from "../review/runner.js";
+import { ReviewRunner, MAX_CONTEXT_LINES } from "../review/runner.js";
 import { defaultReviewModels, resolveModel } from "../ai/models.js";
 import { generateAnnotations } from "../ai/generate.js";
 import { nodeFs } from "../util/node-fs.js";
@@ -118,6 +118,31 @@ export function reviewRoutes(
     const run = runner.get(c.req.param("id"));
     if (!run) return c.json({ error: "run not found" }, 404);
     return c.json({ run });
+  });
+
+  // GET /api/review/:id/context?path&start&end — lines the diff leaves out, so
+  // the reviewer can expand around a hunk
+  app.get("/:id/context", async (c) => {
+    const path = c.req.query("path");
+    const start = Number(c.req.query("start"));
+    const end = Number(c.req.query("end"));
+
+    if (!path) return c.json({ error: "path is required" }, 400);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1) {
+      return c.json({ error: "start and end must be line numbers" }, 400);
+    }
+    if (end - start + 1 > MAX_CONTEXT_LINES) {
+      return c.json(
+        { error: `At most ${MAX_CONTEXT_LINES} lines can be expanded at once.` },
+        400
+      );
+    }
+
+    try {
+      return c.json(await runner.fileContext(c.req.param("id"), path, start, end));
+    } catch (e) {
+      return c.json({ error: describeGhError(e) }, statusFor(e));
+    }
   });
 
   // POST /api/review/:id/comments — stage an inline comment locally

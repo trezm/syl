@@ -167,6 +167,96 @@ export function parseUnifiedDiff(diff: string): DiffFile[] {
   return files;
 }
 
+/**
+ * A hunk's footprint in one side of the file. Empty ranges — a hunk that only
+ * adds lines has no old-side content — are written `start = end + 1`, which
+ * keeps the arithmetic below working without a special case at every use.
+ */
+interface LineRange {
+  start: number;
+  end: number;
+}
+
+function rangeOf(start: number, count: number): LineRange {
+  return count === 0
+    ? { start: start + 1, end: start }
+    : { start, end: start + count - 1 };
+}
+
+/**
+ * A stretch of the file that lies between two hunks and so isn't in the diff.
+ * Line numbers are in the new file; `delta` converts them to the old file,
+ * which is exact because everything in a gap is unchanged by definition.
+ */
+export interface DiffGap {
+  /**
+   * Index of the hunk below the gap — 0 for the gap above the first hunk, and
+   * `hunks.length` for the one that runs to the end of the file.
+   */
+  index: number;
+  /** First hidden line in the new file. */
+  start: number;
+  /** Last hidden line, or null for the trailing gap: the file's end is unknown. */
+  end: number | null;
+  /** `oldLine - newLine` for every line in the gap. */
+  delta: number;
+}
+
+/**
+ * The hidden stretches of a file, in order, so the UI can offer to expand them.
+ * Gaps that turn out to be empty (hunks that abut, or a hunk starting at line
+ * one) are dropped; the trailing gap is always reported, since nothing in the
+ * diff says whether the last hunk reaches the end of the file.
+ */
+export function diffGaps(file: DiffFile): DiffGap[] {
+  if (file.binary || file.hunks.length === 0) return [];
+
+  const gaps: DiffGap[] = [];
+  const ranges = file.hunks.map((hunk) => ({
+    old: rangeOf(hunk.oldStart, hunk.oldLines),
+    new: rangeOf(hunk.newStart, hunk.newLines),
+  }));
+
+  file.hunks.forEach((_, index) => {
+    const current = ranges[index];
+    const previous = index === 0 ? null : ranges[index - 1];
+    const start = previous ? previous.new.end + 1 : 1;
+    const end = current.new.start - 1;
+    if (start <= end) {
+      gaps.push({
+        index,
+        start,
+        end,
+        delta: current.old.start - current.new.start,
+      });
+    }
+  });
+
+  const last = ranges[ranges.length - 1];
+  gaps.push({
+    index: file.hunks.length,
+    start: last.new.end + 1,
+    end: null,
+    delta: last.old.end - last.new.end,
+  });
+
+  return gaps;
+}
+
+/** Turns lines fetched for a gap into context lines the diff can render. */
+export function gapContextLines(
+  gap: DiffGap,
+  startLine: number,
+  texts: string[]
+): DiffLine[] {
+  return texts.map((text, i) => ({
+    type: "context" as const,
+    oldLine: startLine + i + gap.delta,
+    newLine: startLine + i,
+    text,
+  }));
+}
+
 /** One row of a side-by-side diff: old file on the left, new file on the right. */
 export interface DiffSplitRow {
   left: DiffLine | null;

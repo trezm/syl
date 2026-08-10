@@ -90,6 +90,7 @@ export async function fetchPullRequestMeta(
     baseRefName: string;
     baseRefOid: string | null;
     headRefName: string;
+    headRefOid: string | null;
     url: string;
   }>(
     [
@@ -99,7 +100,7 @@ export async function fetchPullRequestMeta(
       "-R",
       repo,
       "--json",
-      "title,body,author,baseRefName,baseRefOid,headRefName,url",
+      "title,body,author,baseRefName,baseRefOid,headRefName,headRefOid,url",
     ],
     projectRoot
   );
@@ -112,9 +113,23 @@ export async function fetchPullRequestMeta(
     base: meta.baseRefName,
     baseSha: meta.baseRefOid ?? null,
     head: meta.headRefName,
+    headSha: meta.headRefOid ?? null,
     author: meta.author?.login ?? "unknown",
     url: meta.url,
   };
+}
+
+/** The head commit on its own, for runs cached before it was recorded. */
+export async function fetchPullRequestHeadSha(
+  repo: string,
+  number: number,
+  projectRoot: string
+): Promise<string | null> {
+  const meta = await gh<{ headRefOid: string | null }>(
+    ["pr", "view", String(number), "-R", repo, "--json", "headRefOid"],
+    projectRoot
+  );
+  return meta.headRefOid ?? null;
 }
 
 /** A ref that names a commit directly, rather than a branch that can move. */
@@ -133,7 +148,9 @@ function encodePath(filePath: string): string {
  * The local checkout is tried first — the base commit of a pull request is
  * usually already fetched, and `git show` costs nothing — with GitHub as the
  * fallback for a clone that has never seen it. Branch names are also tried
- * under the remote, since a base branch often has no local ref at all.
+ * under the remote, since a base branch often has no local ref at all. The
+ * fallback carries the head side: a fork's branch isn't fetchable by name at
+ * all, but its head commit is always readable from the base repository.
  */
 export async function fetchFileAtRef(options: {
   repo: string;

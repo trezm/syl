@@ -69,6 +69,12 @@ export interface PullRequestMeta {
    */
   baseSha: string | null;
   head: string;
+  /**
+   * Commit the head branch points at. Expanding the diff reads files at this
+   * commit; null on runs stored before it was recorded, which are filled in on
+   * demand.
+   */
+  headSha: string | null;
   author: string;
   url: string;
 }
