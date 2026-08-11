@@ -63,8 +63,15 @@ export type {
   DiffFile,
   DiffFileStatus,
   DiffSplitRow,
+  DiffGap,
 } from "./diff.js";
-export { parseUnifiedDiff, diffTotals, toSplitRows } from "./diff.js";
+export {
+  parseUnifiedDiff,
+  diffTotals,
+  toSplitRows,
+  diffGaps,
+  gapContextLines,
+} from "./diff.js";
 
 // Review
 export type {

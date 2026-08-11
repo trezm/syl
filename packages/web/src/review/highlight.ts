@@ -79,8 +79,17 @@ const MAX_CHARS = 200_000;
  * separately is what makes the parse worth anything: a document interleaving
  * removed and added lines is not code anyone wrote, whereas each side on its
  * own is the real file with the untouched stretches missing.
+ *
+ * `extra` is context the reviewer has expanded into view. It belongs to both
+ * sides, and folding it in here means an expanded stretch is parsed as part of
+ * the file rather than on its own — and fills in gaps that were guesswork
+ * before.
  */
-function sideLines(file: DiffFile, side: "old" | "new"): DiffLine[] {
+function sideLines(
+  file: DiffFile,
+  side: "old" | "new",
+  extra: DiffLine[]
+): DiffLine[] {
   const dropped = side === "old" ? "add" : "delete";
   const lines: DiffLine[] = [];
   for (const hunk of file.hunks) {
@@ -88,7 +97,13 @@ function sideLines(file: DiffFile, side: "old" | "new"): DiffLine[] {
       if (line.type !== dropped) lines.push(line);
     }
   }
-  return lines;
+  if (extra.length === 0) return lines;
+
+  // Both runs are already ascending and can't overlap — expanded lines are by
+  // definition outside every hunk — so this only interleaves them.
+  const number = (line: DiffLine) =>
+    (side === "old" ? line.oldLine : line.newLine) ?? 0;
+  return [...lines, ...extra].sort((a, b) => number(a) - number(b));
 }
 
 /** Parses one reconstructed side and splits its highlighting back onto lines. */
@@ -138,7 +153,8 @@ function highlightSide(
  * falls back to the plain text the diff already renders.
  */
 export async function highlightDiffFile(
-  file: DiffFile
+  file: DiffFile,
+  extra: DiffLine[] = []
 ): Promise<DiffHighlight | null> {
   if (file.binary || file.hunks.length === 0) return null;
   const language = await loadLanguage(file.path);
@@ -148,8 +164,8 @@ export async function highlightDiffFile(
   try {
     // Old side first: context lines belong to both, and the new side is the
     // one that reflects the file as it will land.
-    highlightSide(sideLines(file, "old"), language, highlight);
-    highlightSide(sideLines(file, "new"), language, highlight);
+    highlightSide(sideLines(file, "old", extra), language, highlight);
+    highlightSide(sideLines(file, "new", extra), language, highlight);
   } catch (e) {
     console.warn(`Failed to highlight ${file.path}`, e);
     return null;
@@ -160,21 +176,25 @@ export async function highlightDiffFile(
 /**
  * Highlighting for one file's diff, or null until it is ready — the grammar
  * arrives in its own chunk, so the diff renders as plain text first and gains
- * colour a moment later.
+ * colour a moment later. Expanding the diff re-parses with the newly revealed
+ * lines; the previous result stays up meanwhile, since tokens are keyed by line
+ * and stale ones simply don't match.
  */
-export function useDiffHighlight(file: DiffFile): DiffHighlight | null {
+export function useDiffHighlight(
+  file: DiffFile,
+  extra: DiffLine[] = []
+): DiffHighlight | null {
   const [highlight, setHighlight] = useState<DiffHighlight | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setHighlight(null);
-    highlightDiffFile(file).then((result) => {
+    highlightDiffFile(file, extra).then((result) => {
       if (!cancelled) setHighlight(result);
     });
     return () => {
       cancelled = true;
     };
-  }, [file]);
+  }, [file, extra]);
 
   return highlight;
 }

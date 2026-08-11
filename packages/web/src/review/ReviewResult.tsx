@@ -524,6 +524,7 @@ export default function ReviewResult({
           ) : (
             <DiffView
               files={files}
+              runId={run.id}
               findings={findings}
               activeFindingId={activeFindingId}
               viewMode={viewMode}
