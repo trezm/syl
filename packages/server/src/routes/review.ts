@@ -27,13 +27,14 @@ function statusFor(e: unknown): 400 | 404 {
   return /not found/i.test(messageFor(e)) ? 404 : 400;
 }
 
+/** The runner is owned by the caller, so the channel routes can share it. */
 export function reviewRoutes(
   projectRoot: string,
+  runner: ReviewRunner,
   wasmDir: string,
   treeSitterWasmDir: string
 ) {
   const app = new Hono();
-  const runner = new ReviewRunner(projectRoot);
   const store = new AnnotationStore(path.join(projectRoot, ".syl"), nodeFs());
 
   // GET /api/review/remotes — git remotes of the project syl is pointed at

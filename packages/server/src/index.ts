@@ -10,6 +10,8 @@ import { annotationRoutes } from "./routes/annotations.js";
 import { generateRoutes } from "./routes/generate.js";
 import { linkRoutes } from "./routes/links.js";
 import { reviewRoutes } from "./routes/review.js";
+import { channelRoutes } from "./routes/channel.js";
+import { ReviewRunner } from "./review/runner.js";
 import { ProjectIndex } from "./links/project-index.js";
 
 // Import language registrations
@@ -44,10 +46,13 @@ app.route("/api/files", fileRoutes(projectRoot));
 app.route("/api/annotations", annotationRoutes(projectRoot, grammarWasmDir, treeSitterWasmDir));
 app.route("/api/generate", generateRoutes(projectRoot, grammarWasmDir, treeSitterWasmDir));
 app.route("/api/links", linkRoutes(projectRoot, projectIndex));
+// One runner, shared: the channel builds its payloads from stored runs.
+const reviewRunner = new ReviewRunner(projectRoot);
 app.route(
   "/api/review",
-  reviewRoutes(projectRoot, grammarWasmDir, treeSitterWasmDir)
+  reviewRoutes(projectRoot, reviewRunner, grammarWasmDir, treeSitterWasmDir)
 );
+app.route("/api/channel", channelRoutes(projectRoot, reviewRunner));
 
 // Serve WASM files — check tree-sitter runtime dir first, then grammar dir
 app.get("/wasm/:file", async (c) => {

@@ -123,6 +123,63 @@ even though the rest of `.syl/` is meant to be committed. It needs the built-in
 `node:sqlite`, which means Node 22.5 or newer — on older Node, syl logs a
 warning at startup and keeps runs in memory as before.
 
+### Handing a review to a Claude Code session
+
+**Send to session** in the review header pushes what you're looking at into a
+Claude Code session you already have open — the one that already knows what you
+were doing. Either the selected finding, with the diff hunk it points at, or a
+question you type. Both arrive in that session as a `<channel source="syl">`
+event carrying the repository, pull request, file and line as attributes.
+
+This is a [channel](https://code.claude.com/docs/en/channels-reference): a small
+MCP server in `packages/channel` that Claude Code spawns per session. It listens
+on a loopback port and registers itself under `~/.claude/channels/syl/`, so syl
+can find every listening session and let you pick one. Nothing needs a fixed port
+and nothing needs naming — Claude Code tells each spawned server which session
+and project it belongs to.
+
+It is deliberately **one-way**. The channel exposes no tools, so there is nothing
+for Claude to call back on; you read the answer in the session itself, which is
+where you were working anyway. And nothing is ever sent without a click, which is
+also what keeps GitHub-authored text out of your context by default.
+
+#### Setting it up
+
+Channels are a research preview, so a session has to opt in. Add the server to
+the `.mcp.json` of the project you run Claude Code in:
+
+```json
+{
+  "mcpServers": {
+    "syl": { "command": "node", "args": ["<abs path>/packages/channel/dist/server.js"] }
+  }
+}
+```
+
+Then start the session with:
+
+```bash
+claude --dangerously-load-development-channels server:syl
+```
+
+Custom channels aren't on the approved allowlist yet, so that flag is required
+and shows a full-screen warning before it starts. On Team and Enterprise plans an
+admin has to enable channels for the organization first. The panel shows both the
+snippet and the command, with the path already filled in, whenever no session is
+listening.
+
+#### Untrusted by default
+
+Most of what syl pushes is text somebody else wrote — pull request titles and
+descriptions off GitHub, findings written by a model. All of it is fenced in
+`QUOTED` blocks, and the channel's instructions tell Claude to treat those as data
+rather than as instructions. A `"""` appearing inside a diff can't close the fence
+early. The only unfenced prose is syl's own framing and what you typed.
+
+The listener is bound to `127.0.0.1` and every push needs a bearer token that
+lives only in the `0600` registry file, so another local process can't put text in
+front of your session.
+
 ## Links in Annotations
 
 Annotations can point at other places in the codebase. Any symbol you wrap in
@@ -219,6 +276,7 @@ row makes it the Enter target so the pointer and keyboard never disagree.
 packages/
 ├── core/       ← tree-sitter path builder + annotation store
 ├── server/     ← Hono API: file serving + annotation CRUD
+├── channel/    ← Claude Code channel: pushes review events into a live session
 └── web/        ← Vite + React: CodeMirror viewer + annotation UI
 ```
 

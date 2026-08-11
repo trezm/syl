@@ -5,8 +5,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run build -w packages/core && concurrently -n server,web -c blue,green \"PORT=${SYL_SERVER_PORT:-3000} npm run dev -w packages/server\" \"npm run dev -w packages/web\"",
-    "build": "npm run build -w packages/core && npm run build -w packages/server && npm run build -w packages/web"
+    "dev": "npm run build -w packages/core && npm run build -w packages/channel && concurrently -n server,web -c blue,green \"PORT=${SYL_SERVER_PORT:-3000} npm run dev -w packages/server\" \"npm run dev -w packages/web\"",
+    "build": "npm run build -w packages/core && npm run build -w packages/channel && npm run build -w packages/server && npm run build -w packages/web"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

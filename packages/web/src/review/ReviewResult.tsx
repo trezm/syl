@@ -18,6 +18,7 @@ import DiffView, {
 } from "./DiffView";
 import type { FindingAnchorState } from "./FindingCard";
 import SubmitReviewPanel from "./SubmitReviewPanel";
+import SessionPanel, { useChannelSessions } from "./SessionPanel";
 import { useDiffAnnotations } from "./useDiffAnnotations";
 import {
   useSelectedModel,
@@ -67,6 +68,8 @@ export default function ReviewResult({
 }) {
   const [activeFindingId, setActiveFindingId] = useState<string | null>(null);
   const [showScout, setShowScout] = useState(false);
+  const [sessionPanelOpen, setSessionPanelOpen] = useState(false);
+  const { sessions, setup } = useChannelSessions();
   const [viewMode, setViewMode] = useState<DiffViewMode>(() => {
     try {
       return localStorage.getItem(VIEW_MODE_KEY) === "split"
@@ -160,6 +163,20 @@ export default function ReviewResult({
   }, [model, models, run.id]);
 
   const commentTargets = useMemo(() => diffCommentTargets(files), [files]);
+
+  /**
+   * The finding the user last jumped to — what the channel panel offers to send.
+   * Its index travels too: the push endpoint addresses findings by position in
+   * this same sorted list rather than trusting the browser to send one back.
+   */
+  const activeFindingIndex = useMemo(() => {
+    const index = findings.findIndex(
+      (finding, i) => findingDomId(finding, i) === activeFindingId
+    );
+    return index === -1 ? null : index;
+  }, [findings, activeFindingId]);
+  const activeFinding =
+    activeFindingIndex === null ? null : findings[activeFindingIndex];
 
   // A finding is "staged" when a comment already exists at its anchor, so the
   // same finding can't be queued twice.
@@ -289,6 +306,21 @@ export default function ReviewResult({
             </a>
           )}
           <div className="ml-auto flex items-center gap-2">
+            {!sessionPanelOpen && (
+              <button
+                className="text-xs px-2 py-1 rounded border border-gray-700 text-gray-300 hover:bg-gray-800 flex items-center gap-1.5"
+                title="Hand a finding or a question to a running Claude Code session"
+                onClick={() => setSessionPanelOpen(true)}
+              >
+                {sessions.length > 0 && (
+                  <span
+                    className="w-1.5 h-1.5 rounded-full bg-emerald-400"
+                    aria-hidden="true"
+                  />
+                )}
+                Send to session
+              </button>
+            )}
             <div className="flex items-center rounded border border-gray-700 overflow-hidden">
               {(
                 [
@@ -503,6 +535,17 @@ export default function ReviewResult({
             />
           )}
         </main>
+
+        {sessionPanelOpen && (
+          <SessionPanel
+            run={run}
+            activeFinding={activeFinding}
+            activeFindingIndex={activeFindingIndex}
+            sessions={sessions}
+            setup={setup}
+            onClose={() => setSessionPanelOpen(false)}
+          />
+        )}
       </div>
 
       <SubmitReviewPanel
