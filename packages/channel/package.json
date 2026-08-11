@@ -1,0 +1,27 @@
+{
+  "name": "@syl/channel",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Claude Code channel server — pushes syl review events into a running session",
+  "main": "./dist/registry.js",
+  "types": "./dist/registry.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/registry.js",
+      "types": "./dist/registry.d.ts"
+    }
+  },
+  "bin": {
+    "syl-channel": "./dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node ./dist/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}

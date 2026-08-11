@@ -9,6 +9,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.76.0",
     "@hono/node-server": "^1.13.0",
+    "@syl/channel": "*",
     "@syl/core": "*",
     "hono": "^4.6.0",
     "openai": "^7.4.0",

@@ -230,6 +230,51 @@ export async function submitReview(
   return data.submission;
 }
 
+// ---- Channel: pushing review events into a Claude Code session ----
+
+export interface ChannelSession {
+  sessionId: string;
+  projectDir: string;
+  startedAt: string;
+  matchesProject: boolean;
+  label: string;
+}
+
+export interface ChannelSetup {
+  registryDir: string;
+  serverPath: string;
+  mcpConfig: string;
+  command: string;
+}
+
+export async function fetchChannelSessions(): Promise<{
+  sessions: ChannelSession[];
+  setup: ChannelSetup | null;
+}> {
+  const res = await fetch("/api/channel/sessions");
+  if (!res.ok) return { sessions: [], setup: null };
+  return res.json();
+}
+
+export async function pushToSession(input: {
+  sessionId: string;
+  runId: string;
+  kind: "finding" | "question";
+  findingIndex?: number;
+  message?: string;
+  context?: { file?: string | null; line?: number | null; finding?: string | null };
+}): Promise<void> {
+  const res = await fetch("/api/channel/push", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to send to the session");
+  }
+}
+
 export interface GenerateStatus {
   available: boolean;
   defaultModel: string | null;
