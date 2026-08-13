@@ -4,7 +4,16 @@ import type {
   PullRequestSummary,
   ReviewRunSummary,
 } from "@syl/core";
-import { fetchRemotes, fetchPullRequests, fetchReviewRuns } from "../api";
+import {
+  fetchRemotes,
+  fetchPullRequests,
+  fetchReviewRuns,
+  checkGenerateStatus,
+} from "../api";
+import ModelSelector, {
+  useSelectedModel,
+  type AvailableModel,
+} from "../components/ModelSelector";
 
 interface ReviewSetupProps {
   onStart: (params: {
@@ -12,11 +21,16 @@ interface ReviewSetupProps {
     repo: string;
     number: number;
     refresh: boolean;
+    scoutModel?: string;
+    reviewerModel?: string;
   }) => void;
   /** Reopens a past run straight from the cache, without touching GitHub. */
   onOpenRun: (id: string) => void;
   busy: boolean;
 }
+
+const SCOUT_KEY = "syl-review-scout-model";
+const REVIEWER_KEY = "syl-review-reviewer-model";
 
 const STATE_STYLE: Record<string, string> = {
   OPEN: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
@@ -50,6 +64,16 @@ export default function ReviewSetup({
   const [past, setPast] = useState<ReviewRunSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  // The two passes are chosen independently, so each remembers its own model —
+  // and neither is the annotation model, which is a different kind of job.
+  const [models, setModels] = useState<AvailableModel[]>([]);
+  const [defaults, setDefaults] = useState<{
+    scout: string | null;
+    reviewer: string | null;
+  }>({ scout: null, reviewer: null });
+  const scout = useSelectedModel(models, defaults.scout, SCOUT_KEY);
+  const reviewer = useSelectedModel(models, defaults.reviewer, REVIEWER_KEY);
+
   // Past runs come from the server's cache, so they outlive a restart.
   useEffect(() => {
     fetchReviewRuns()
@@ -59,13 +83,22 @@ export default function ReviewSetup({
 
   useEffect(() => {
     fetchRemotes()
-      .then(({ remotes }) => {
+      .then(({ remotes, defaults }) => {
         setRemotes(remotes);
         // One remote is the common case — preselect it but still show it.
         const usable = remotes.filter((r) => r.repo);
         if (usable.length === 1) setRemote(usable[0]);
+        setDefaults(defaults);
       })
       .catch((e) => setError(e.message));
+  }, []);
+
+  // Same list the annotate tab uses: every model syl knows about, flagged with
+  // whether a CLI or an API key can actually run it.
+  useEffect(() => {
+    checkGenerateStatus()
+      .then((s) => setModels(s.models ?? []))
+      .catch(() => setModels([]));
   }, []);
 
   useEffect(() => {
@@ -104,6 +137,10 @@ export default function ReviewSetup({
       repo: remote.repo,
       number: parsed,
       refresh,
+      // Omitted rather than nulled when nothing is runnable, so the server
+      // still gets to report which model is missing.
+      scoutModel: scout.model ?? undefined,
+      reviewerModel: reviewer.model ?? undefined,
     });
   };
 
@@ -114,6 +151,32 @@ export default function ReviewSetup({
         A cheap scout model triages the diff, then a stronger reviewer produces
         findings.
       </p>
+
+      {/* Which model runs each pass. Sits with the description of the two
+          passes rather than in the numbered steps: it carries over between
+          reviews, so it isn't something you set every time. */}
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border border-gray-800 rounded px-3 py-2 bg-gray-900/40">
+        <label className="flex items-center gap-2 text-xs text-gray-500">
+          Scout
+          <ModelSelector
+            models={models}
+            model={scout.model}
+            onSelect={scout.selectModel}
+          />
+        </label>
+        <label className="flex items-center gap-2 text-xs text-gray-500">
+          Reviewer
+          <ModelSelector
+            models={models}
+            model={reviewer.model}
+            onSelect={reviewer.selectModel}
+          />
+        </label>
+        <span className="text-xs text-gray-600">
+          <span className="font-mono">cli</span> runs on your Claude or Codex
+          subscription; <span className="font-mono">api</span> bills per token.
+        </span>
+      </div>
 
       {error && (
         <div className="mt-4 text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded px-3 py-2">

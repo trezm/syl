@@ -149,6 +149,8 @@ export default function ReviewView({
     repo: string;
     number: number;
     refresh?: boolean;
+    scoutModel?: string;
+    reviewerModel?: string;
   }) => {
     setStarting(true);
     setError(null);
@@ -161,7 +163,11 @@ export default function ReviewView({
     }
   };
 
-  /** "Re-run" on a review that came back from the cache. */
+  /**
+   * "Re-run" on a review that came back from the cache. It reuses the run's own
+   * models rather than whatever the setup page currently has selected, so
+   * re-running an old review reproduces it instead of quietly switching model.
+   */
   const rerun = () => {
     if (!run) return;
     void handleStart({
@@ -169,6 +175,8 @@ export default function ReviewView({
       repo: run.repo,
       number: run.number,
       refresh: true,
+      scoutModel: run.scoutModel,
+      reviewerModel: run.reviewerModel,
     });
   };
 

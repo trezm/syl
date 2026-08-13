@@ -229,6 +229,14 @@ The model picker marks each model `· cli` or `· api` so you can see which one 
 about to bill you, and the review page records the backend used for each stage.
 Set `SYL_PREFER_SDK=1` to force the API path.
 
+There are three independent choices, each remembered separately: the annotation
+model, in the annotate tab's header, and the review's **scout** and **reviewer**
+models, above the pull request form. The review's two default to a cheap Claude
+for triage and a strong one for findings, falling back to whatever is actually
+runnable — point either at a GPT model to run that pass through `codex` instead.
+Re-running a past review reuses the models that review was run with, not the
+ones currently selected.
+
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # only needed without the claude CLI
 export OPENAI_API_KEY=sk-...          # only needed without the codex CLI
