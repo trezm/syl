@@ -27,14 +27,18 @@ const PROVIDER_ORDER: ModelProvider[] = ["anthropic", "openai"];
  * Tracks the selected model against the server's model list. A stored id that
  * the server no longer offers (a retired model, or one whose API key was
  * removed) falls back rather than sticking around and failing at generate time.
+ *
+ * `storageKey` separates the independent choices — annotation, review scout and
+ * review reviewer each remember their own model.
  */
 export function useSelectedModel(
   models: AvailableModel[],
-  defaultModel: string | null
+  defaultModel: string | null,
+  storageKey: string = STORAGE_KEY
 ) {
   const [stored, setStored] = useState<string | null>(() => {
     try {
-      return localStorage.getItem(STORAGE_KEY);
+      return localStorage.getItem(storageKey);
     } catch {
       return null;
     }
@@ -50,14 +54,17 @@ export function useSelectedModel(
     return usable[0].id;
   }, [models, defaultModel, stored]);
 
-  const selectModel = useCallback((id: string) => {
-    setStored(id);
-    try {
-      localStorage.setItem(STORAGE_KEY, id);
-    } catch {
-      // ignore
-    }
-  }, []);
+  const selectModel = useCallback(
+    (id: string) => {
+      setStored(id);
+      try {
+        localStorage.setItem(storageKey, id);
+      } catch {
+        // ignore
+      }
+    },
+    [storageKey]
+  );
 
   return { model, selectModel };
 }
