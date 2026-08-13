@@ -12,6 +12,7 @@ import {
   fetchFileAtRef,
   describeGhError,
 } from "../review/github.js";
+import { describeCommandFailure } from "../review/exec.js";
 import { ReviewRunner, MAX_CONTEXT_LINES } from "../review/runner.js";
 import { defaultReviewModels, resolveModel } from "../ai/models.js";
 import { generateAnnotations } from "../ai/generate.js";
@@ -25,6 +26,14 @@ function messageFor(e: unknown): string {
 /** "not found" is the only 404 the comment endpoints raise; the rest are 400s. */
 function statusFor(e: unknown): 400 | 404 {
   return /not found/i.test(messageFor(e)) ? 404 : 400;
+}
+
+/**
+ * A failed request is worth a server log as well as a response — the response
+ * carries the reader-facing summary, the log the whole command failure.
+ */
+function logFailure(what: string, e: unknown): void {
+  console.error(`${what} failed:\n  ${describeCommandFailure(e)}`);
 }
 
 /** The runner is owned by the caller, so the channel routes can share it. */
@@ -43,6 +52,7 @@ export function reviewRoutes(
       const remotes = await listRemotes(projectRoot);
       return c.json({ remotes, defaults: await defaultReviewModels() });
     } catch (e) {
+      logFailure("Listing git remotes", e);
       return c.json({ error: describeGhError(e) }, 500);
     }
   });
@@ -55,6 +65,7 @@ export function reviewRoutes(
       const pullRequests = await listPullRequests(repo, projectRoot);
       return c.json({ pullRequests });
     } catch (e) {
+      logFailure(`Listing pull requests for ${repo}`, e);
       return c.json({ error: describeGhError(e) }, 500);
     }
   });
@@ -141,6 +152,7 @@ export function reviewRoutes(
     try {
       return c.json(await runner.fileContext(c.req.param("id"), path, start, end));
     } catch (e) {
+      logFailure(`Expanding context in ${path}`, e);
       return c.json({ error: describeGhError(e) }, statusFor(e));
     }
   });
@@ -289,7 +301,7 @@ export function reviewRoutes(
 
       return c.json({ ok: true, count: result.count });
     } catch (e) {
-      console.error(`Original-file generation for run ${run.id} failed:`, e);
+      logFailure(`Original-file generation for run ${run.id}`, e);
       return c.json({ error: describeGhError(e) }, 500);
     }
   });
@@ -309,6 +321,7 @@ export function reviewRoutes(
       });
       return c.json({ submission });
     } catch (e) {
+      logFailure(`Submitting review for run ${c.req.param("id")}`, e);
       return c.json({ error: describeGhError(e) }, statusFor(e));
     }
   });
