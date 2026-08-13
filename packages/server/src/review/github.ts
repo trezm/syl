@@ -238,32 +238,103 @@ export async function submitReview(
     })),
   };
 
-  const stdout = await run(
-    "gh",
-    ["api", `repos/${repo}/pulls/${number}/reviews`, "-X", "POST", "--input", "-"],
-    { cwd: projectRoot, input: JSON.stringify(payload) }
-  );
+  let stdout: string;
+  try {
+    stdout = await run(
+      "gh",
+      ["api", `repos/${repo}/pulls/${number}/reviews`, "-X", "POST", "--input", "-"],
+      { cwd: projectRoot, input: JSON.stringify(payload) }
+    );
+  } catch (e) {
+    // The payload goes over stdin, so a rejection names neither the review nor
+    // the comment it tripped over. Log the anchors that were sent alongside it.
+    console.error(
+      `Review of ${repo}#${number} (${input.event}) was rejected; anchors sent:${
+        payload.comments
+          .map((c) => `\n  ${c.path}:${c.line} (${c.side})`)
+          .join("") || " none"
+      }`
+    );
+    throw e;
+  }
 
   const result = JSON.parse(stdout) as { html_url: string; id: number };
   return { url: result.html_url, id: result.id };
 }
 
+/**
+ * GitHub's rejection reasons, as `gh api` leaves them. The one-line summary
+ * ("gh: Validation Failed (HTTP 422)") goes to stderr, but the `errors` array
+ * naming the offending field lands on stdout with the rest of the body — so a
+ * failure read from stderr alone never says what was actually wrong.
+ */
+interface GitHubApiError {
+  message: string;
+  details: string[];
+}
+
+const FIELD_ERROR_CODES: Record<string, string> = {
+  missing: "is missing",
+  missing_field: "is required",
+  invalid: "is invalid",
+  already_exists: "already exists",
+  unprocessable: "could not be processed",
+};
+
+function describeFieldError(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (!error || typeof error !== "object") return "";
+  const { message, resource, field, code } = error as Record<string, unknown>;
+  if (typeof message === "string" && message) return message;
+  const subject = [resource, field].filter((p) => typeof p === "string").join(".");
+  const reason =
+    typeof code === "string"
+      ? (FIELD_ERROR_CODES[code] ?? `was rejected (${code})`)
+      : "was rejected";
+  return subject ? `\`${subject}\` ${reason}` : reason;
+}
+
+function parseGitHubApiError(stdout: string): GitHubApiError | null {
+  const text = stdout.trim();
+  if (!text.startsWith("{")) return null;
+  let body: any;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!body || typeof body.message !== "string") return null;
+  const details = Array.isArray(body.errors)
+    ? body.errors.map(describeFieldError).filter(Boolean)
+    : [];
+  return { message: body.message, details };
+}
+
 /** Turn raw command failures into something worth showing a user. */
 export function describeGhError(e: unknown): string {
-  if (e instanceof CommandError) {
-    if (e.command === "gh" && e.message.includes("not found on PATH")) {
-      return "The GitHub CLI (`gh`) is not installed or not on PATH. Install it from cli.github.com.";
-    }
-    if (/auth|logged in|authentication/i.test(e.message)) {
-      return `GitHub CLI is not authenticated — run \`gh auth login\`. (${e.message})`;
-    }
-    if (/can not approve your own pull request/i.test(e.message)) {
-      return "GitHub does not allow approving your own pull request — submit as a comment instead.";
-    }
-    if (/must be part of the diff/i.test(e.message)) {
-      return `A comment was anchored to a line GitHub doesn't consider part of the diff. (${e.message})`;
-    }
-    return e.message;
+  if (!(e instanceof CommandError)) {
+    return e instanceof Error ? e.message : String(e);
   }
-  return e instanceof Error ? e.message : String(e);
+
+  if (e.command === "gh" && e.message.includes("not found on PATH")) {
+    return "The GitHub CLI (`gh`) is not installed or not on PATH. Install it from cli.github.com.";
+  }
+  if (/auth|logged in|authentication/i.test(e.stderr || e.message)) {
+    return `GitHub CLI is not authenticated — run \`gh auth login\`. (${e.message})`;
+  }
+
+  const api = parseGitHubApiError(e.stdout);
+  const summary = e.stderr || api?.message || e.message;
+  const details = api?.details ?? [];
+  const full = [summary, ...details].join("\n");
+
+  if (/can not approve your own pull request/i.test(full)) {
+    return "GitHub does not allow approving your own pull request — submit as a comment instead.";
+  }
+  if (/must be part of the diff/i.test(full)) {
+    return `A comment was anchored to a line GitHub doesn't consider part of the diff. (${details.join("; ") || summary})`;
+  }
+  return details.length
+    ? [summary, ...details.map((d) => `• ${d}`)].join("\n")
+    : full;
 }

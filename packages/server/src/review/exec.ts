@@ -7,11 +7,47 @@ export class CommandError extends Error {
   constructor(
     message: string,
     readonly command: string,
-    readonly stderr: string
+    readonly stderr: string,
+    /**
+     * What the command printed before failing. `gh api` writes GitHub's error
+     * body here rather than to stderr, so this is where the reason for a 4xx
+     * actually lives.
+     */
+    readonly stdout: string = "",
+    readonly exitCode: number | null = null,
+    readonly args: string[] = []
   ) {
     super(message);
     this.name = "CommandError";
   }
+}
+
+/** Output is kept for diagnostics, so it is capped before it reaches a log. */
+const MAX_CAPTURED_OUTPUT = 8 * 1024;
+
+function captured(value: unknown): string {
+  const text = (value ?? "").toString().trim();
+  return text.length > MAX_CAPTURED_OUTPUT
+    ? `${text.slice(0, MAX_CAPTURED_OUTPUT)}… (truncated)`
+    : text;
+}
+
+/**
+ * Everything known about a failure, for a server log rather than the UI —
+ * the command as invoked plus both streams, since either one may hold the
+ * reason.
+ */
+export function describeCommandFailure(e: unknown): string {
+  if (!(e instanceof CommandError)) {
+    return e instanceof Error ? (e.stack ?? e.message) : String(e);
+  }
+  return [
+    `${[e.command, ...e.args].join(" ")} exited ${e.exitCode ?? "abnormally"}`,
+    e.stderr && `stderr: ${e.stderr}`,
+    e.stdout && `stdout: ${e.stdout}`,
+  ]
+    .filter(Boolean)
+    .join("\n  ");
 }
 
 export interface RunOptions {
@@ -42,14 +78,21 @@ export async function run(
       throw new CommandError(
         `\`${command}\` was not found on PATH.`,
         command,
-        ""
+        "",
+        "",
+        null,
+        args
       );
     }
-    const stderr = (e?.stderr ?? "").toString().trim();
+    const stderr = captured(e?.stderr);
+    const stdout = captured(e?.stdout);
     throw new CommandError(
-      stderr || e?.message || `\`${command}\` failed`,
+      stderr || stdout || e?.message || `\`${command}\` failed`,
       command,
-      stderr
+      stderr,
+      stdout,
+      typeof e?.code === "number" ? e.code : null,
+      args
     );
   }
 }
