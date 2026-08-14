@@ -15,6 +15,7 @@ import {
 } from "../review/github.js";
 import { describeCommandFailure } from "../review/exec.js";
 import { ReviewRunner, MAX_CONTEXT_LINES } from "../review/runner.js";
+import { MAX_STORED_RUNS } from "../review/store.js";
 import { defaultReviewModels, resolveModel } from "../ai/models.js";
 import { generateAnnotations } from "../ai/generate.js";
 import { nodeFs } from "../util/node-fs.js";
@@ -126,10 +127,31 @@ export function reviewRoutes(
     const limit = Number(c.req.query("limit"));
     return c.json({
       runs: runner.list(
-        Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : undefined
+        Number.isInteger(limit) && limit > 0
+          ? Math.min(limit, MAX_STORED_RUNS)
+          : undefined
       ),
     });
   });
+
+  // DELETE /api/review/runs — empty the cache
+  app.delete("/runs", (c) => {
+    return c.json({ removed: runner.forgetAll() });
+  });
+
+  // DELETE /api/review/runs/:id — forget one cached run
+  app.delete("/runs/:id", (c) => {
+    try {
+      runner.forget(c.req.param("id"));
+      return c.json({ ok: true });
+    } catch (e) {
+      return c.json({ error: messageFor(e) }, statusFor(e));
+    }
+  });
+
+  // GET /api/review/cache — where the cache is and how much is in it. Declared
+  // before /:id, which would otherwise read "cache" as a run id.
+  app.get("/cache", (c) => c.json(runner.cacheInfo()));
 
   // GET /api/review/:id — full run, including the diff once fetched
   app.get("/:id", (c) => {
@@ -161,6 +183,30 @@ export function reviewRoutes(
     } catch (e) {
       logFailure(`Expanding context in ${path}`, e);
       return c.json({ error: describeGhError(e) }, statusFor(e));
+    }
+  });
+
+  // POST /api/review/:id/refresh — re-fetch the pull request into an existing
+  // run: new commits, a new title, and whatever that strands. No model calls.
+  app.post("/:id/refresh", async (c) => {
+    try {
+      const { run, changed, outdated, adopted } = await runner.refresh(
+        c.req.param("id")
+      );
+      return c.json({ run, changed, outdated, adopted });
+    } catch (e) {
+      logFailure(`Refreshing review run ${c.req.param("id")}`, e);
+      return c.json({ error: describeGhError(e) }, statusFor(e));
+    }
+  });
+
+  // POST /api/review/:id/comments/discard-outdated — drop the comments a
+  // refresh stranded, which is what unblocks submitting the rest
+  app.post("/:id/comments/discard-outdated", (c) => {
+    try {
+      return c.json({ removed: runner.discardOutdatedComments(c.req.param("id")) });
+    } catch (e) {
+      return c.json({ error: messageFor(e) }, statusFor(e));
     }
   });
 

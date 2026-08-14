@@ -1,15 +1,6 @@
 import { useEffect, useState } from "react";
-import type {
-  GitRemote,
-  PullRequestSummary,
-  ReviewRunSummary,
-} from "@syl/core";
-import {
-  fetchRemotes,
-  fetchPullRequests,
-  fetchReviewRuns,
-  checkGenerateStatus,
-} from "../api";
+import type { GitRemote, PullRequestSummary } from "@syl/core";
+import { fetchRemotes, fetchPullRequests, checkGenerateStatus } from "../api";
 import ModelSelector, {
   useSelectedModel,
   type AvailableModel,
@@ -27,8 +18,6 @@ interface ReviewSetupProps {
     scoutModel?: string;
     reviewerModel?: string;
   }) => void;
-  /** Reopens a past run straight from the cache, without touching GitHub. */
-  onOpenRun: (id: string) => void;
   busy: boolean;
 }
 
@@ -51,22 +40,7 @@ function requestedReviewers(reviewers: string[]): string {
   return `@${reviewers[0]}, @${reviewers[1]} +${reviewers.length - 2}`;
 }
 
-/** Compact relative age — past reviews are usually hours or days old. */
-function timeAgo(iso: string): string {
-  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 90) return "just now";
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
-
-export default function ReviewSetup({
-  onStart,
-  onOpenRun,
-  busy,
-}: ReviewSetupProps) {
+export default function ReviewSetup({ onStart, busy }: ReviewSetupProps) {
   const [remotes, setRemotes] = useState<GitRemote[]>([]);
   const [remote, setRemote] = useState<GitRemote | null>(null);
   const [prs, setPrs] = useState<PullRequestSummary[]>([]);
@@ -74,7 +48,6 @@ export default function ReviewSetup({
   const [prError, setPrError] = useState<string | null>(null);
   const [number, setNumber] = useState("");
   const [refresh, setRefresh] = useState(false);
-  const [past, setPast] = useState<ReviewRunSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const { filter, updateFilter } = usePullRequestFilter();
 
@@ -87,13 +60,6 @@ export default function ReviewSetup({
   }>({ scout: null, reviewer: null });
   const scout = useSelectedModel(models, defaults.scout, SCOUT_KEY);
   const reviewer = useSelectedModel(models, defaults.reviewer, REVIEWER_KEY);
-
-  // Past runs come from the server's cache, so they outlive a restart.
-  useEffect(() => {
-    fetchReviewRuns()
-      .then(setPast)
-      .catch(() => setPast([]));
-  }, []);
 
   useEffect(() => {
     fetchRemotes()
@@ -196,53 +162,6 @@ export default function ReviewSetup({
         <div className="mt-4 text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded px-3 py-2">
           {error}
         </div>
-      )}
-
-      {/* Past reviews — cached on disk, so they open without a model call.
-          Above the form on purpose: this is the landing page the review's back
-          button returns to, and picking up an earlier review is the likelier
-          intent there. Capped in height so the form stays reachable. */}
-      {past.length > 0 && (
-        <section className="mt-8">
-          <h3 className="text-xs uppercase tracking-wide text-gray-500 mb-2">
-            Past reviews
-          </h3>
-          <ul className="border border-gray-800 rounded divide-y divide-gray-800 overflow-hidden overflow-y-auto max-h-64">
-            {past.map((run) => (
-              <li key={run.id}>
-                <button
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-800/60 flex items-center gap-2"
-                  onClick={() => onOpenRun(run.id)}
-                >
-                  <span className="text-gray-500 font-mono">#{run.number}</span>
-                  <span className="text-gray-200 truncate flex-1">
-                    {run.title ?? run.repo}
-                  </span>
-                  {run.phase === "failed" ? (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-red-500/40 bg-red-500/10 text-red-300">
-                      failed
-                    </span>
-                  ) : run.phase === "done" ? (
-                    <span className="text-xs text-gray-500">
-                      {run.findingCount} finding
-                      {run.findingCount === 1 ? "" : "s"}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-blue-500/40 bg-blue-500/10 text-blue-300">
-                      {run.phase}
-                    </span>
-                  )}
-                  <span className="text-gray-600 text-xs w-16 text-right">
-                    {timeAgo(run.startedAt)}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-xs text-gray-600">
-            Opening one costs nothing — it's read from syl's local cache.
-          </p>
-        </section>
       )}
 
       {/* Step 1 — remote */}

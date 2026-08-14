@@ -168,6 +168,13 @@ export interface DraftComment {
   /** Title of the finding this came from, or null when hand-written. */
   fromFinding: string | null;
   createdAt: string;
+  /**
+   * When a refresh found that this comment's line is no longer part of the
+   * diff — the pull request has been rewritten under it. GitHub would reject
+   * the anchor, so an outdated comment can't be submitted. Null while it still
+   * lands somewhere real, including after a refresh that puts the line back.
+   */
+  outdatedAt: string | null;
 }
 
 export interface SubmittedReview {
@@ -236,8 +243,19 @@ export interface ReviewRun {
    * Hash of everything the models were given — diff, PR metadata, model ids and
    * the prompts themselves. Two runs sharing it must produce the same review,
    * which is what makes the local cache safe. Null until the diff is fetched.
+   *
+   * Pinned to the findings, not to the diff on screen: a refresh that pulls in
+   * new commits moves `currentHash` on and leaves this where the models left
+   * it, so the cache never serves these findings for a diff they never saw.
    */
   inputHash: string | null;
+  /**
+   * The same hash over the pull request as it currently stands. Equal to
+   * `inputHash` until a refresh finds the pull request has moved on.
+   */
+  currentHash: string | null;
+  /** When the pull request was last re-fetched into this run. Null if never. */
+  refreshedAt: string | null;
   /** Set when the models were skipped in favour of a cached review. */
   reusedFrom: ReviewReuse | null;
   /** Comments staged locally, not yet sent to GitHub. */
@@ -246,19 +264,45 @@ export interface ReviewRun {
   submissions: SubmittedReview[];
 }
 
+/**
+ * Whether the pull request has moved on since the models ran. Only a refresh
+ * can discover this, so a run nobody has refreshed is never stale — it is
+ * simply as old as it is.
+ */
+export function isReviewStale(run: ReviewRun): boolean {
+  return (
+    run.inputHash !== null &&
+    run.currentHash !== null &&
+    run.currentHash !== run.inputHash
+  );
+}
+
+export function outdatedComments(run: ReviewRun): DraftComment[] {
+  return run.comments.filter((c) => c.outdatedAt !== null);
+}
+
 /** A row in the run history — everything the picker shows, without the diff. */
 export interface ReviewRunSummary {
   id: string;
   repo: string;
+  remote: string;
   number: number;
   title: string | null;
   phase: ReviewPhase;
   startedAt: string;
   finishedAt: string | null;
+  refreshedAt: string | null;
   scoutModel: string;
   reviewerModel: string;
   findingCount: number;
+  /** Comments staged against this run and not yet posted, outdated ones included. */
+  pendingComments: number;
+  /** Of those, the ones a refresh found no longer anchored to the diff. */
+  outdatedComments: number;
+  submissionCount: number;
   reused: boolean;
+  /** The pull request has changed since this review's findings were written. */
+  stale: boolean;
   error: string | null;
 }
 
@@ -266,15 +310,21 @@ export function summarizeRun(run: ReviewRun): ReviewRunSummary {
   return {
     id: run.id,
     repo: run.repo,
+    remote: run.remote,
     number: run.number,
     title: run.meta?.title ?? null,
     phase: run.phase,
     startedAt: run.startedAt,
     finishedAt: run.finishedAt,
+    refreshedAt: run.refreshedAt,
     scoutModel: run.scoutModel,
     reviewerModel: run.reviewerModel,
     findingCount: run.review?.findings.length ?? 0,
+    pendingComments: run.comments.length,
+    outdatedComments: outdatedComments(run).length,
+    submissionCount: run.submissions.length,
     reused: run.reusedFrom !== null,
+    stale: isReviewStale(run),
     error: run.error,
   };
 }

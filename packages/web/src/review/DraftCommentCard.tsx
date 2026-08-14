@@ -50,11 +50,36 @@ export default function DraftCommentCard({
     );
   }
 
+  // An outdated comment has no line left in the diff to sit against, so it
+  // only ever renders in the review bar — where it has to read as a problem.
+  const outdated = comment.outdatedAt !== null;
+
   return (
-    <div className="my-2 mx-3 rounded-md border border-amber-500/40 bg-amber-500/[0.06]">
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-amber-500/20">
-        <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border border-amber-500/40 text-amber-300">
-          Pending
+    <div
+      className={`my-2 mx-3 rounded-md border ${
+        outdated
+          ? "border-gray-700 bg-gray-900/60"
+          : "border-amber-500/40 bg-amber-500/[0.06]"
+      }`}
+    >
+      <div
+        className={`flex items-center gap-2 px-3 py-1.5 border-b ${
+          outdated ? "border-gray-800" : "border-amber-500/20"
+        }`}
+      >
+        <span
+          className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${
+            outdated
+              ? "border-gray-600 text-gray-400"
+              : "border-amber-500/40 text-amber-300"
+          }`}
+          title={
+            outdated
+              ? "The pull request no longer changes this line, so GitHub won't take a comment on it."
+              : undefined
+          }
+        >
+          {outdated ? "Outdated" : "Pending"}
         </span>
         {comment.fromFinding && (
           <span className="text-[10px] text-gray-500 truncate">
