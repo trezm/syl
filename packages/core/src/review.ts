@@ -54,6 +54,12 @@ export interface PullRequestSummary {
   author: string;
   headRefName: string;
   state: string;
+  /**
+   * Who GitHub is still waiting on — logins for users, `team/slug` for teams.
+   * A request disappears once that reviewer submits, so this is the pending
+   * set rather than everyone who was ever asked.
+   */
+  reviewers: string[];
 }
 
 export interface PullRequestMeta {

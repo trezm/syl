@@ -38,6 +38,16 @@ const STATE_STYLE: Record<string, string> = {
   CLOSED: "bg-gray-500/15 text-gray-400 border-gray-500/40",
 };
 
+/**
+ * Who the pull request is waiting on, short enough to sit on one row. Two
+ * names is the common case; beyond that the row keeps its shape and the rest
+ * are counted, with the full list on hover.
+ */
+function requestedReviewers(reviewers: string[]): string {
+  if (reviewers.length <= 2) return reviewers.map((r) => `@${r}`).join(", ");
+  return `@${reviewers[0]}, @${reviewers[1]} +${reviewers.length - 2}`;
+}
+
 /** Compact relative age — past reviews are usually hours or days old. */
 function timeAgo(iso: string): string {
   const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -332,6 +342,20 @@ export default function ReviewSetup({
                         {pr.state.toLowerCase()}
                       </span>
                       <span className="text-gray-600 text-xs">@{pr.author}</span>
+                      {/* Who GitHub is still waiting on. Kept last and dimmed
+                          — it's a reason to pick a pull request, not part of
+                          identifying one. */}
+                      {pr.reviewers.length > 0 && (
+                        <span
+                          className="text-xs text-gray-500 whitespace-nowrap"
+                          title={`Review requested from ${pr.reviewers
+                            .map((r) => `@${r}`)
+                            .join(", ")}`}
+                        >
+                          <span className="text-gray-700">→ </span>
+                          {requestedReviewers(pr.reviewers)}
+                        </span>
+                      )}
                     </button>
                   </li>
                 ))}
