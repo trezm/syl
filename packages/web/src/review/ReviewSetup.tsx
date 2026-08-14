@@ -14,6 +14,9 @@ import ModelSelector, {
   useSelectedModel,
   type AvailableModel,
 } from "../components/ModelSelector";
+import PullRequestFilters, {
+  usePullRequestFilter,
+} from "./PullRequestFilters";
 
 interface ReviewSetupProps {
   onStart: (params: {
@@ -73,6 +76,7 @@ export default function ReviewSetup({
   const [refresh, setRefresh] = useState(false);
   const [past, setPast] = useState<ReviewRunSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const { filter, updateFilter } = usePullRequestFilter();
 
   // The two passes are chosen independently, so each remembers its own model —
   // and neither is the annotation model, which is a different kind of job.
@@ -119,7 +123,7 @@ export default function ReviewSetup({
     let cancelled = false;
     setPrsLoading(true);
     setPrError(null);
-    fetchPullRequests(remote.repo)
+    fetchPullRequests(remote.repo, filter)
       .then((list) => {
         if (!cancelled) setPrs(list);
       })
@@ -132,7 +136,7 @@ export default function ReviewSetup({
     return () => {
       cancelled = true;
     };
-  }, [remote]);
+  }, [remote, filter]);
 
   const submit = () => {
     if (!remote?.repo) return;
@@ -312,6 +316,16 @@ export default function ReviewSetup({
 
         {remote?.repo && (
           <div className="mt-4">
+            {/* Which pull requests the list offers. Defaults to the ones that
+                are yours to deal with and still open; every part of that is
+                yours to widen. */}
+            <div className="mb-2">
+              <PullRequestFilters
+                filter={filter}
+                onChange={updateFilter}
+                disabled={prsLoading}
+              />
+            </div>
             {prsLoading && (
               <div className="text-sm text-gray-500">Loading pull requests…</div>
             )}
@@ -363,7 +377,9 @@ export default function ReviewSetup({
             )}
             {!prsLoading && !prError && prs.length === 0 && (
               <div className="text-sm text-gray-500">
-                No pull requests listed — enter a number above.
+                {filter.involvement.length > 0 || filter.state !== "all"
+                  ? "No pull requests match these filters — widen them, or enter a number above."
+                  : "No pull requests listed — enter a number above."}
               </div>
             )}
           </div>

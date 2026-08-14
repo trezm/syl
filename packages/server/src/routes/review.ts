@@ -4,6 +4,7 @@ import type { ReviewCommentSide, ReviewEvent } from "@syl/core";
 import {
   AnnotationStore,
   getLanguageForFile,
+  parsePullRequestFilter,
   parseUnifiedDiff,
 } from "@syl/core";
 import {
@@ -57,12 +58,18 @@ export function reviewRoutes(
     }
   });
 
-  // GET /api/review/prs?repo=owner/name — recent PRs, for the picker
+  // GET /api/review/prs?repo=owner/name&state&involvement — recent PRs, for
+  // the picker. `involvement` is a comma-separated subset of authored,
+  // assigned and review-requested, ORed together; empty means everyone's.
   app.get("/prs", async (c) => {
     const repo = c.req.query("repo");
     if (!repo) return c.json({ error: "repo is required" }, 400);
+    const filter = parsePullRequestFilter({
+      involvement: c.req.query("involvement") ?? null,
+      state: c.req.query("state") ?? null,
+    });
     try {
-      const pullRequests = await listPullRequests(repo, projectRoot);
+      const pullRequests = await listPullRequests(repo, projectRoot, filter);
       return c.json({ pullRequests });
     } catch (e) {
       logFailure(`Listing pull requests for ${repo}`, e);

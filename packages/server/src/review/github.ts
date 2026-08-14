@@ -1,10 +1,13 @@
 import type {
   GitRemote,
   PullRequestSummary,
+  PullRequestFilter,
+  PullRequestInvolvement,
   PullRequestMeta,
   ReviewEvent,
   ReviewCommentSide,
 } from "@syl/core";
+import { DEFAULT_PULL_REQUEST_FILTER } from "@syl/core";
 import { run, CommandError } from "./exec.js";
 
 /** Extract "owner/repo" from any of the URL shapes git remotes come in. */
@@ -57,44 +60,172 @@ function describeReviewer(request: ReviewRequest): string {
   return team ? `team/${team}` : "";
 }
 
+interface PullRequestListItem {
+  number: number;
+  title: string;
+  author: { login: string } | null;
+  headRefName: string;
+  state: string;
+  assignees: { login: string }[] | null;
+  reviewRequests: ReviewRequest[] | null;
+}
+
+const LIST_FIELDS =
+  "number,title,author,headRefName,state,assignees,reviewRequests";
+
+/**
+ * How far down the list to look when an involvement filter is on. The filter
+ * is applied here rather than by GitHub (see `listPullRequests`), so the fetch
+ * has to be wider than the answer — one page, which covers any repository
+ * whose recent pull requests are worth picking from.
+ */
+const INVOLVEMENT_SCAN_LIMIT = 100;
+
+/**
+ * Successful identity lookups, cached for the life of the server: the logged-in
+ * user doesn't change under it, and the alternative is two extra API calls on
+ * every keystroke-free repo switch. A failure is never cached, so a
+ * `gh auth login` part-way through a session takes effect on the next attempt.
+ */
+const viewerLogins = new Map<string, Promise<string>>();
+const viewerTeams = new Map<string, Promise<GitHubTeam[]>>();
+
+interface GitHubTeam {
+  slug: string;
+  organization?: { login: string } | null;
+}
+
+function cachedBy<T>(
+  cache: Map<string, Promise<T>>,
+  key: string,
+  load: () => Promise<T>
+): Promise<T> {
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const pending = load().catch((e) => {
+    cache.delete(key);
+    throw e;
+  });
+  cache.set(key, pending);
+  return pending;
+}
+
+interface Viewer {
+  login: string;
+  /** Lowercased slugs of the viewer's teams in the repository's org. */
+  teamSlugs: Set<string>;
+}
+
+async function fetchViewer(repo: string, projectRoot: string): Promise<Viewer> {
+  const org = repo.split("/")[0]?.toLowerCase() ?? "";
+
+  const login = await cachedBy(viewerLogins, projectRoot, async () => {
+    const user = await gh<{ login: string }>(["api", "user"], projectRoot);
+    return user.login;
+  });
+
+  // Team membership needs the `read:org` scope, which `gh auth login` doesn't
+  // always grant. Without it a team's review request simply doesn't match,
+  // rather than the whole listing failing.
+  const teams = await cachedBy(viewerTeams, projectRoot, () =>
+    gh<GitHubTeam[]>(["api", "user/teams?per_page=100"], projectRoot).catch(
+      () => []
+    )
+  );
+
+  return {
+    login: login.toLowerCase(),
+    teamSlugs: new Set(
+      teams
+        .filter((t) => t.organization?.login?.toLowerCase() === org)
+        .map((t) => t.slug.toLowerCase())
+    ),
+  };
+}
+
+function isInvolved(
+  pr: PullRequestListItem,
+  reviewers: string[],
+  involvement: PullRequestInvolvement,
+  viewer: Viewer
+): boolean {
+  switch (involvement) {
+    case "authored":
+      return pr.author?.login?.toLowerCase() === viewer.login;
+    case "assigned":
+      return (pr.assignees ?? []).some(
+        (a) => a.login?.toLowerCase() === viewer.login
+      );
+    case "review-requested":
+      // Reviewers arrive normalised: a login for a person, `team/slug` for a
+      // team — so a request made to a team the viewer is in counts too.
+      return reviewers.some((reviewer) => {
+        const name = reviewer.toLowerCase();
+        return name.startsWith("team/")
+          ? viewer.teamSlugs.has(name.slice("team/".length))
+          : name === viewer.login;
+      });
+  }
+}
+
+/**
+ * Recent pull requests, narrowed to the ones the viewer selected.
+ *
+ * State is GitHub's to filter, but involvement is not: `gh pr list --author`
+ * and its siblings go through the search index, which doesn't cover every
+ * repository — an unindexed one answers an authored-by query with nothing at
+ * all — and search ANDs its terms, where the picker ORs them. So the listing
+ * is fetched plainly and matched here against the fields it already carries.
+ */
 export async function listPullRequests(
   repo: string,
   projectRoot: string,
+  filter: PullRequestFilter = DEFAULT_PULL_REQUEST_FILTER,
   limit = 30
 ): Promise<PullRequestSummary[]> {
-  const prs = await gh<
-    {
-      number: number;
-      title: string;
-      author: { login: string } | null;
-      headRefName: string;
-      state: string;
-      reviewRequests: ReviewRequest[] | null;
-    }[]
-  >(
+  const narrowing = filter.involvement.length > 0;
+
+  const prs = await gh<PullRequestListItem[]>(
     [
       "pr",
       "list",
       "-R",
       repo,
       "--state",
-      "all",
+      filter.state,
       "--json",
-      "number,title,author,headRefName,state,reviewRequests",
+      LIST_FIELDS,
       "--limit",
-      String(limit),
+      String(narrowing ? Math.max(limit, INVOLVEMENT_SCAN_LIMIT) : limit),
     ],
     projectRoot
   );
 
-  return prs.map((pr) => ({
-    number: pr.number,
-    title: pr.title,
-    author: pr.author?.login ?? "unknown",
-    headRefName: pr.headRefName,
-    state: pr.state,
-    reviewers: (pr.reviewRequests ?? []).map(describeReviewer).filter(Boolean),
-  }));
+  const viewer = narrowing ? await fetchViewer(repo, projectRoot) : null;
+  const summaries: PullRequestSummary[] = [];
+
+  for (const pr of prs) {
+    if (summaries.length >= limit) break;
+    const reviewers = (pr.reviewRequests ?? [])
+      .map(describeReviewer)
+      .filter(Boolean);
+    if (
+      viewer &&
+      !filter.involvement.some((i) => isInvolved(pr, reviewers, i, viewer))
+    ) {
+      continue;
+    }
+    summaries.push({
+      number: pr.number,
+      title: pr.title,
+      author: pr.author?.login ?? "unknown",
+      headRefName: pr.headRefName,
+      state: pr.state,
+      reviewers,
+    });
+  }
+
+  return summaries;
 }
 
 export async function fetchPullRequestMeta(
