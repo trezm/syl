@@ -40,6 +40,23 @@ async function gh<T>(args: string[], projectRoot: string): Promise<T> {
   return JSON.parse(stdout) as T;
 }
 
+/**
+ * A pending review request is either a user or a team, and the two arrive with
+ * different fields — only the typename tells them apart.
+ */
+interface ReviewRequest {
+  __typename?: string;
+  login?: string;
+  slug?: string;
+  name?: string;
+}
+
+function describeReviewer(request: ReviewRequest): string {
+  if (request.login) return request.login;
+  const team = request.slug ?? request.name;
+  return team ? `team/${team}` : "";
+}
+
 export async function listPullRequests(
   repo: string,
   projectRoot: string,
@@ -52,6 +69,7 @@ export async function listPullRequests(
       author: { login: string } | null;
       headRefName: string;
       state: string;
+      reviewRequests: ReviewRequest[] | null;
     }[]
   >(
     [
@@ -62,7 +80,7 @@ export async function listPullRequests(
       "--state",
       "all",
       "--json",
-      "number,title,author,headRefName,state",
+      "number,title,author,headRefName,state,reviewRequests",
       "--limit",
       String(limit),
     ],
@@ -75,6 +93,7 @@ export async function listPullRequests(
     author: pr.author?.login ?? "unknown",
     headRefName: pr.headRefName,
     state: pr.state,
+    reviewers: (pr.reviewRequests ?? []).map(describeReviewer).filter(Boolean),
   }));
 }
 
