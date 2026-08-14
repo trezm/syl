@@ -6,6 +6,7 @@ import {
   diffCommentTargets,
   anchorForFinding,
   findingToCommentBody,
+  isReviewStale,
   type LinkTarget,
   type ReviewRun,
   type Finding,
@@ -31,25 +32,14 @@ import {
   submitReview,
   checkGenerateStatus,
   generateOriginalAnnotations,
+  refreshReviewRun,
+  discardOutdatedComments,
 } from "../api";
 import { SEVERITY_STYLE, SEVERITY_DOT, RISK_STYLE } from "./severity";
+import { formatWhen } from "./time";
 
 const VIEW_MODE_KEY = "syl-diff-view-mode";
 const NOTES_COLLAPSED_KEY = "syl-diff-notes-collapsed";
-
-/** Absolute, not relative — a cached review can be arbitrarily old. */
-function formatWhen(iso: string): string {
-  const date = new Date(iso);
-  const sameDay = new Date().toDateString() === date.toDateString();
-  return sameDay
-    ? date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
-    : date.toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
-}
 
 export default function ReviewResult({
   run,
@@ -68,6 +58,10 @@ export default function ReviewResult({
 }) {
   const [activeFindingId, setActiveFindingId] = useState<string | null>(null);
   const [showScout, setShowScout] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  /** What the last refresh did, or why it couldn't. Cleared by the next one. */
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [sessionPanelOpen, setSessionPanelOpen] = useState(false);
   const { sessions, setup } = useChannelSessions();
   const [viewMode, setViewMode] = useState<DiffViewMode>(() => {
@@ -255,6 +249,44 @@ export default function ReviewResult({
     }
   };
 
+  /**
+   * Catches the run up with GitHub without re-reviewing: the diff, the title
+   * and the branches come back current, and anything the new diff strands is
+   * marked rather than quietly left to fail at submission.
+   */
+  const doRefresh = async () => {
+    setRefreshing(true);
+    setRefreshNote(null);
+    setRefreshError(null);
+    try {
+      const result = await refreshReviewRun(run.id);
+      await onRefresh();
+      if (!result.changed) {
+        setRefreshNote("Already up to date with GitHub.");
+      } else if (result.adopted) {
+        setRefreshNote(
+          "Pulled in the latest commits — a review of them was already cached, so the findings are current too."
+        );
+      } else {
+        setRefreshNote(
+          `Pulled in the latest commits.${
+            result.outdated > 0
+              ? ` ${result.outdated} staged comment${
+                  result.outdated === 1 ? "" : "s"
+                } no longer land${result.outdated === 1 ? "s" : ""} on the diff.`
+              : ""
+          }`
+        );
+      }
+    } catch (e: any) {
+      setRefreshError(e.message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const stale = isReviewStale(run);
+
   const diffPaneRef = useRef<HTMLElement>(null);
 
   // A big PR makes for a very tall scroll container, and `scrollIntoView` with
@@ -306,6 +338,18 @@ export default function ReviewResult({
             </a>
           )}
           <div className="ml-auto flex items-center gap-2">
+            <button
+              className={`text-xs px-2 py-1 rounded border disabled:opacity-40 ${
+                stale
+                  ? "border-amber-500/50 text-amber-300 hover:bg-amber-500/10"
+                  : "border-gray-700 text-gray-300 hover:bg-gray-800"
+              }`}
+              title="Fetch this pull request again — new commits, a new title — and mark anything that no longer lines up. Doesn't call the models."
+              disabled={refreshing}
+              onClick={doRefresh}
+            >
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </button>
             {!sessionPanelOpen && (
               <button
                 className="text-xs px-2 py-1 rounded border border-gray-700 text-gray-300 hover:bg-gray-800 flex items-center gap-1.5"
@@ -378,6 +422,11 @@ export default function ReviewResult({
             {run.reviewerModel}
             {run.reviewerBackend && ` (${run.reviewerBackend})`}
           </span>
+          {run.refreshedAt && (
+            <span title={`Last checked against GitHub at ${formatWhen(run.refreshedAt)}`}>
+              refreshed {formatWhen(run.refreshedAt)}
+            </span>
+          )}
           {run.reusedFrom && (
             <span className="flex items-center gap-1.5 text-gray-400">
               <span
@@ -400,6 +449,28 @@ export default function ReviewResult({
           <div className="mt-2 text-xs text-amber-300">
             The diff was too large to send in full — the models saw a truncated
             version, so coverage may be incomplete.
+          </div>
+        )}
+        {/* The diff below is the pull request as it stands; the findings are
+            from before it moved. Saying which is which is the whole job here. */}
+        {stale && (
+          <div className="mt-2 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1.5 flex items-center gap-2 flex-wrap">
+            <span>
+              This pull request has changed since it was reviewed. The diff is
+              current; the findings were written against the earlier version and
+              may point at code that has moved or gone.
+            </span>
+            <button className="underline hover:text-amber-200" onClick={onRerun}>
+              Review it again
+            </button>
+          </div>
+        )}
+        {refreshNote && (
+          <div className="mt-2 text-xs text-gray-400">{refreshNote}</div>
+        )}
+        {refreshError && (
+          <div className="mt-2 text-xs text-red-300 whitespace-pre-wrap">
+            {refreshError}
           </div>
         )}
       </div>
@@ -553,6 +624,12 @@ export default function ReviewResult({
         run={run}
         onSubmit={async (input) => {
           await submitReview(run.id, input);
+          await onRefresh();
+        }}
+        onEditComment={commentHandlers.onEditComment}
+        onDeleteComment={commentHandlers.onDeleteComment}
+        onDiscardOutdated={async () => {
+          await discardOutdatedComments(run.id);
           await onRefresh();
         }}
       />

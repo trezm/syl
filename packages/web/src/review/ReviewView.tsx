@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import type { LinkTarget, ReviewRun, ReviewPhase } from "@syl/core";
+import type {
+  LinkTarget,
+  ReviewRun,
+  ReviewPhase,
+  ReviewRunSummary,
+} from "@syl/core";
 import ReviewSetup from "./ReviewSetup";
 import ReviewResult from "./ReviewResult";
-import { startReview, fetchReviewRun } from "../api";
+import CachedReviews from "./CachedReviews";
+import {
+  startReview,
+  fetchReviewRun,
+  fetchReviewRuns,
+  fetchReviewCacheInfo,
+  type ReviewCacheInfo,
+} from "../api";
 
 const PHASE_LABEL: Record<ReviewPhase, string> = {
   fetching: "Fetching pull request and diff",
@@ -76,6 +88,119 @@ function Progress({ run, onBack }: { run: ReviewRun; onBack: () => void }) {
 }
 
 const LAST_RUN_KEY = "syl-last-review-run";
+const LANDING_TAB_KEY = "syl-review-landing-tab";
+
+type LandingTab = "new" | "cached";
+
+/**
+ * Where the review tab starts: a form for a new review, and everything already
+ * reviewed on this machine. Two panes rather than one long page — the cached
+ * list is a place you go back to, not a preamble to the form.
+ */
+function ReviewLanding({
+  onStart,
+  onOpenRun,
+  busy,
+}: {
+  onStart: (params: {
+    remote: string;
+    repo: string;
+    number: number;
+    refresh: boolean;
+    scoutModel?: string;
+    reviewerModel?: string;
+  }) => void;
+  onOpenRun: (id: string) => void;
+  busy: boolean;
+}) {
+  const [tab, setTab] = useState<LandingTab>(() => {
+    try {
+      return localStorage.getItem(LANDING_TAB_KEY) === "cached"
+        ? "cached"
+        : "new";
+    } catch {
+      return "new";
+    }
+  });
+  const [runs, setRuns] = useState<ReviewRunSummary[]>([]);
+  const [cache, setCache] = useState<ReviewCacheInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [rows, info] = await Promise.all([
+        // The whole cache, not the handful the picker used to show — this is
+        // the list you go to when you want one you can't remember the name of.
+        fetchReviewRuns(200),
+        fetchReviewCacheInfo(),
+      ]);
+      setRuns(rows);
+      setCache(info);
+      setError(null);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const choose = (next: LandingTab) => {
+    setTab(next);
+    try {
+      localStorage.setItem(LANDING_TAB_KEY, next);
+    } catch {
+      // ignore
+    }
+  };
+
+  return (
+    <div>
+      <div className="border-b border-gray-800 px-4">
+        <div className="flex items-center gap-1">
+          {(
+            [
+              ["new", "New review"],
+              ["cached", "Cached reviews"],
+            ] as [LandingTab, string][]
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => choose(value)}
+              className={`text-xs px-3 py-2 border-b-2 -mb-px ${
+                tab === value
+                  ? "border-blue-500 text-gray-100"
+                  : "border-transparent text-gray-500 hover:text-gray-300"
+              }`}
+            >
+              {label}
+              {value === "cached" && runs.length > 0 && (
+                <span className="ml-1.5 text-gray-600">{runs.length}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+      {tab === "new" ? (
+        <ReviewSetup onStart={onStart} busy={busy} />
+      ) : (
+        <CachedReviews
+          runs={runs}
+          cache={cache}
+          loading={loading}
+          error={error}
+          onOpen={onOpenRun}
+          onChanged={load}
+        />
+      )}
+    </div>
+  );
+}
 
 export default function ReviewView({
   onNavigate,
@@ -207,7 +332,7 @@ export default function ReviewView({
   if (!runId || !run) {
     return (
       <div className="flex-1 overflow-y-auto">
-        <ReviewSetup
+        <ReviewLanding
           onStart={handleStart}
           onOpenRun={remember}
           busy={starting}

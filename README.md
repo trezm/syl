@@ -121,16 +121,55 @@ the next review is a miss and runs for real. A reused review is labelled
 **re-run** link; **Ignore cached result** on the setup screen does the same
 thing up front.
 
-Two other things fall out of it. Past runs are listed on the setup screen and
-reopen without touching GitHub, and everything attached to a run — the diff, the
-findings, staged comments, submitted reviews — survives a restart. The 200 most
-recent runs are kept; older ones are dropped.
+Everything attached to a run — the diff, the findings, staged comments,
+submitted reviews — survives a restart along with it. The 200 most recent runs
+are kept; older ones are dropped.
 
 The cache is disposable: delete the file, or let it be discarded automatically
 when the schema changes. The directory ignores itself, so it stays out of git
 even though the rest of `.syl/` is meant to be committed. It needs the built-in
 `node:sqlite`, which means Node 22.5 or newer — on older Node, syl logs a
 warning at startup and keeps runs in memory as before.
+
+#### The cached reviews tab
+
+**Cached reviews**, beside **New review** on the review tab, is the whole cache:
+every review this machine has run, grouped by repository, newest first. Opening
+one reads from disk — no GitHub call, no model call — so it's the fast way back
+to something you were part-way through.
+
+Each row carries what's worth knowing without opening it: how old it is, how
+many findings it found, whether comments are staged and unsubmitted, whether it
+has already been posted to GitHub, and whether it has gone **stale**. There's a
+filter box for when the list gets long, **Delete** on a row you're done with,
+and, in the footer beside the database's path and size, **Clear cache**.
+Deleting takes the staged comments with it, so both ask first in their own way —
+the footer confirms inline, and a row deletes only what you hovered.
+
+#### Refreshing against the pull request
+
+A cached review is a photograph of a branch that keeps moving. **Refresh** in
+the review header re-fetches the pull request into the run you're looking at:
+the diff, the title, the branches. It costs two `gh` calls and no model time,
+which makes it the cheap half of a re-run.
+
+What it can't do is redo the review, so it says so instead. The diff on screen
+becomes current while the findings stay as written, and the run is marked
+**stale** — in the header, with a link to review it again, and on its row in the
+cached list. Findings whose line the new diff no longer touches show as *not on
+a diff line*, the same as any finding that lands outside the diff.
+
+Staged comments get re-anchored. One whose line the pull request no longer
+changes is marked **outdated** rather than left to fail: GitHub rejects a whole
+review over a single bad anchor, so nothing can be submitted until they're dealt
+with. They have no row left in the diff to sit under, so they collect in the
+**Review** bar at the bottom, where **Discard them** drops the lot. A comment
+can come back, too — a force-push that restores a line puts its comment back in
+play.
+
+One thing refresh *can* do for free: if a review of the new head is already in
+the cache — from another run, or from before a force-push — it adopts it, and
+the findings come back current as well.
 
 ### Handing a review to a Claude Code session
 

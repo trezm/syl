@@ -157,11 +157,78 @@ export async function startReview(params: {
 }
 
 /** Past runs from the server's local cache — survives a restart. */
-export async function fetchReviewRuns(): Promise<ReviewRunSummary[]> {
-  const res = await fetch("/api/review/runs");
+export async function fetchReviewRuns(
+  limit?: number
+): Promise<ReviewRunSummary[]> {
+  const res = await fetch(
+    `/api/review/runs${limit ? `?limit=${limit}` : ""}`
+  );
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to load past reviews");
   return data.runs ?? [];
+}
+
+export interface ReviewCacheInfo {
+  /** False when the server has no SQLite, so runs only live in its memory. */
+  available: boolean;
+  path: string | null;
+  count: number;
+  sizeBytes: number;
+  maxRuns: number;
+}
+
+export async function fetchReviewCacheInfo(): Promise<ReviewCacheInfo> {
+  const res = await fetch("/api/review/cache");
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to read the review cache");
+  return data;
+}
+
+export async function deleteReviewRun(id: string): Promise<void> {
+  const res = await fetch(`/api/review/runs/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to delete the review");
+  }
+}
+
+export async function clearReviewCache(): Promise<number> {
+  const res = await fetch("/api/review/runs", { method: "DELETE" });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to clear the cache");
+  return data.removed ?? 0;
+}
+
+export interface ReviewRefreshResult {
+  run: ReviewRun;
+  /** False when the pull request is exactly where the review left it. */
+  changed: boolean;
+  /** Staged comments the new diff no longer has a line for. */
+  outdated: number;
+  /** A cached review of the new diff existed, so the findings caught up too. */
+  adopted: boolean;
+}
+
+/**
+ * Pulls the pull request's current state into an existing run — new commits, a
+ * new title — without calling the models again.
+ */
+export async function refreshReviewRun(
+  id: string
+): Promise<ReviewRefreshResult> {
+  const res = await fetch(`/api/review/${id}/refresh`, { method: "POST" });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to refresh the review");
+  return data;
+}
+
+export async function discardOutdatedComments(id: string): Promise<number> {
+  const res = await fetch(`/api/review/${id}/comments/discard-outdated`, {
+    method: "POST",
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to discard the comments");
+  return data.removed ?? 0;
 }
 
 export async function fetchReviewRun(id: string): Promise<ReviewRun> {

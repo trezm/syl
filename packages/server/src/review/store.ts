@@ -14,7 +14,7 @@ type Database = InstanceType<SqliteModule["DatabaseSync"]>;
 const SCHEMA_VERSION = 1;
 
 /** Rows kept on disk. Old runs are pruned oldest-first past this. */
-const MAX_STORED_RUNS = 200;
+export const MAX_STORED_RUNS = 200;
 
 /**
  * `node:sqlite` is built into Node from 22.5. Node 20 — still supported for
@@ -57,7 +57,11 @@ function prepareDir(dbPath: string): void {
  * and cache lookups don't have to parse every row.
  */
 export class ReviewStore {
-  private constructor(private db: Database) {}
+  private constructor(
+    private db: Database,
+    /** Where the cache lives, so the UI can name the file it's offering to clear. */
+    readonly path: string
+  ) {}
 
   /** Returns null when SQLite isn't available or the file can't be opened. */
   static open(projectRoot: string): ReviewStore | null {
@@ -103,7 +107,7 @@ export class ReviewStore {
         "CREATE INDEX IF NOT EXISTS runs_by_started ON runs (started_at DESC)"
       );
 
-      return new ReviewStore(db);
+      return new ReviewStore(db, dbPath);
     } catch (e) {
       console.warn(
         `[syl] Could not open the review cache at ${dbPath} — runs will be kept in memory only.`,
@@ -172,6 +176,29 @@ export class ReviewStore {
     this.db.prepare("DELETE FROM runs WHERE id = ?").run(id);
   }
 
+  /** Empties the cache. The file itself stays — SQLite reuses the pages. */
+  clear(): number {
+    const { count } = this.stats();
+    this.db.exec("DELETE FROM runs");
+    return count;
+  }
+
+  /** What the cache tab reports: where it is, and how much is in it. */
+  stats(): { path: string; count: number; sizeBytes: number } {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM runs").get() as
+      | { n: number }
+      | undefined;
+    let sizeBytes = 0;
+    try {
+      // WAL and index files sit beside the database; the main file is close
+      // enough for a "this is what it costs you" number.
+      sizeBytes = fs.statSync(this.path).size;
+    } catch {
+      // Not yet flushed to disk, or gone — a zero reads better than a throw.
+    }
+    return { path: this.path, count: row?.n ?? 0, sizeBytes };
+  }
+
   prune(max = MAX_STORED_RUNS): void {
     this.db
       .prepare(
@@ -189,7 +216,16 @@ export class ReviewStore {
   /** A row written by an older build is treated as a miss, not a crash. */
   private parse(data: string): ReviewRun | null {
     try {
-      return JSON.parse(data) as ReviewRun;
+      const run = JSON.parse(data) as ReviewRun;
+      // Fields added after this row was written. They're additive, so the run
+      // is filled in rather than thrown away: an old review is exactly what
+      // the cache is for. A run nobody has refreshed is current by definition,
+      // which is what `currentHash = inputHash` says.
+      run.refreshedAt ??= null;
+      run.currentHash ??= run.inputHash;
+      run.comments ??= [];
+      for (const comment of run.comments) comment.outdatedAt ??= null;
+      return run;
     } catch {
       return null;
     }

@@ -107,6 +107,8 @@ export {
   severityRank,
   sortFindings,
   summarizeRun,
+  isReviewStale,
+  outdatedComments,
   REVIEW_EVENTS,
   findingToCommentBody,
   commentTargetKey,
