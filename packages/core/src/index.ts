@@ -84,6 +84,9 @@ export type {
   ReviewResult,
   GitRemote,
   PullRequestSummary,
+  PullRequestInvolvement,
+  PullRequestStateFilter,
+  PullRequestFilter,
   PullRequestMeta,
   ReviewPhase,
   ReviewRun,
@@ -95,6 +98,11 @@ export type {
   SubmittedReview,
 } from "./review.js";
 export {
+  PULL_REQUEST_INVOLVEMENTS,
+  PULL_REQUEST_STATE_FILTERS,
+  DEFAULT_PULL_REQUEST_FILTER,
+  parsePullRequestFilter,
+  pullRequestFilterQuery,
   SEVERITY_ORDER,
   severityRank,
   sortFindings,

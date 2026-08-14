@@ -62,6 +62,74 @@ export interface PullRequestSummary {
   reviewers: string[];
 }
 
+/**
+ * How the viewer is connected to a pull request. The picker ORs the selected
+ * ones together — a relation GitHub's search syntax can't express, since it
+ * ANDs its terms — so the match is made from the listed fields instead.
+ */
+export type PullRequestInvolvement = "authored" | "assigned" | "review-requested";
+
+export const PULL_REQUEST_INVOLVEMENTS: PullRequestInvolvement[] = [
+  "authored",
+  "assigned",
+  "review-requested",
+];
+
+/** The states `gh pr list` accepts. "closed" includes merged, as GitHub's own. */
+export type PullRequestStateFilter = "open" | "closed" | "merged" | "all";
+
+export const PULL_REQUEST_STATE_FILTERS: PullRequestStateFilter[] = [
+  "open",
+  "closed",
+  "merged",
+  "all",
+];
+
+export interface PullRequestFilter {
+  /** Empty matches every pull request, whoever it belongs to. */
+  involvement: PullRequestInvolvement[];
+  state: PullRequestStateFilter;
+}
+
+/** Yours, one way or another, and still open. */
+export const DEFAULT_PULL_REQUEST_FILTER: PullRequestFilter = {
+  involvement: [...PULL_REQUEST_INVOLVEMENTS],
+  state: "open",
+};
+
+/**
+ * A filter as it travels in a query string, so the picker and the route agree
+ * on it. An absent `involvement` is the default set rather than none: only an
+ * explicitly empty one means "everyone's".
+ */
+export function parsePullRequestFilter(params: {
+  involvement?: string | null;
+  state?: string | null;
+}): PullRequestFilter {
+  const involvement =
+    params.involvement == null
+      ? [...DEFAULT_PULL_REQUEST_FILTER.involvement]
+      : params.involvement
+          .split(",")
+          .map((part) => part.trim())
+          .filter((part): part is PullRequestInvolvement =>
+            (PULL_REQUEST_INVOLVEMENTS as string[]).includes(part)
+          );
+
+  const state = PULL_REQUEST_STATE_FILTERS.find((s) => s === params.state);
+  return {
+    involvement,
+    state: state ?? DEFAULT_PULL_REQUEST_FILTER.state,
+  };
+}
+
+export function pullRequestFilterQuery(filter: PullRequestFilter): string {
+  return new URLSearchParams({
+    involvement: filter.involvement.join(","),
+    state: filter.state,
+  }).toString();
+}
+
 export interface PullRequestMeta {
   repo: string;
   number: number;

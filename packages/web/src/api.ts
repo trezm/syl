@@ -9,9 +9,11 @@ import type {
   DraftComment,
   SubmittedReview,
   PullRequestSummary,
+  PullRequestFilter,
   ReviewRun,
   ReviewRunSummary,
 } from "@syl/core";
+import { pullRequestFilterQuery } from "@syl/core";
 import type { AvailableModel } from "./components/ModelSelector";
 
 export interface FileNode {
@@ -124,10 +126,11 @@ export async function fetchRemotes(): Promise<{
 }
 
 export async function fetchPullRequests(
-  repo: string
+  repo: string,
+  filter: PullRequestFilter
 ): Promise<PullRequestSummary[]> {
   const res = await fetch(
-    `/api/review/prs?repo=${encodeURIComponent(repo)}`
+    `/api/review/prs?repo=${encodeURIComponent(repo)}&${pullRequestFilterQuery(filter)}`
   );
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to list pull requests");

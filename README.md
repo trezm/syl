@@ -30,6 +30,15 @@ findings anchored as inline comments on the line they refer to, plus a findings
 sidebar and the reviewer's summary. The diff renders **unified or side-by-side** —
 the toggle sits next to "New review" and is remembered between reviews.
 
+The list you pick the number from starts at the pull requests that are yours to
+deal with: the ones you opened, the ones assigned to you, and the ones waiting on
+a review from you or from a team you belong to — still open. Each of those three
+is a toggle and the state is a dropdown (open, closed, merged, any), so you can
+widen it as far as everyone's pull requests, and what you pick is remembered.
+The three are ORed together, and matched from the listing itself rather than
+through GitHub's search index — which doesn't cover every repository, and would
+answer an "authored by me" query about an unindexed one with nothing at all.
+
 Your own annotations show up in that diff too. For every file the pull request
 touches, Syl resolves the annotations in `.syl/` and drops them inline, anchored
 to the first line of the annotated node the diff actually shows — so a note on a
