@@ -191,8 +191,8 @@ export default function SessionPanel({
             )}
             {chosen && !chosen.matchesProject && (
               <div className="text-[11px] text-amber-300/90 leading-relaxed">
-                That session is working in a different project than syl is
-                pointed at. It won't have this code checked out.
+                That session is working in a different project than the one
+                you're reviewing. It won't have this code checked out.
               </div>
             )}
           </div>

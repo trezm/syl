@@ -1,22 +1,22 @@
 import { Hono } from "hono";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { AnnotationStore, getLanguageForFile } from "@syl/core";
-import { nodeFs } from "../util/node-fs.js";
+import { getLanguageForFile } from "@syl/core";
 import { semanticPathsFor } from "../util/semantic-paths.js";
 import { generateAnnotations } from "../ai/generate.js";
 import { listModels, defaultModelId, resolveModel } from "../ai/models.js";
+import type { Workspace } from "../projects/workspace.js";
 
 export function generateRoutes(
-  projectRoot: string,
+  workspace: Workspace,
   wasmDir: string,
   treeSitterWasmDir: string
 ) {
   const app = new Hono();
-  const sylDir = path.join(projectRoot, ".syl");
-  const store = new AnnotationStore(sylDir, nodeFs());
 
-  // GET /api/generate/status — which models are runnable, and on which backend
+  // GET /api/generate/status — which models are runnable, and on which backend.
+  // Model availability is a property of the server, not of any one project, so
+  // this is the one endpoint here that needs no project.
   app.get("/status", async (c) => {
     const models = await listModels();
     const defaultModel = await defaultModelId();
@@ -29,6 +29,7 @@ export function generateRoutes(
 
   // POST /api/generate — generate annotations via the selected model
   app.post("/", async (c) => {
+    const { root: projectRoot, store } = workspace.require(c);
     const { file, model, semanticPath } = await c.req.json<{
       file: string;
       model: string;

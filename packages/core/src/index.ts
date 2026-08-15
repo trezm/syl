@@ -42,6 +42,9 @@ export {
   findModel,
 } from "./models.js";
 
+// Projects
+export type { ProjectSummary } from "./projects.js";
+
 // Fuzzy matching
 export type { FuzzyMatch, FuzzyResult } from "./fuzzy.js";
 export { fuzzyMatch, fuzzyFilter } from "./fuzzy.js";

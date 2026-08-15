@@ -1,4 +1,5 @@
 import type {
+  ProjectSummary,
   AnnotationFile,
   SemanticNode,
   Annotation,
@@ -29,15 +30,79 @@ export interface ResolveResponse {
   orphans: { path: string; annotations: Annotation[] }[];
 }
 
+// ---- Projects ----
+
+/**
+ * One server can hold several checkouts, so every request below has to say
+ * which one it is about. Rather than thread the id through every call site, the
+ * provider sets it here once and `apiFetch` tags the requests.
+ */
+let activeProjectId: string | null = null;
+
+export function setActiveProject(id: string | null): void {
+  activeProjectId = id;
+}
+
+function withProject(path: string): string {
+  if (!activeProjectId) return path;
+  const [base, existing] = path.split("?");
+  const params = new URLSearchParams(existing);
+  params.set("project", activeProjectId);
+  return `${base}?${params}`;
+}
+
+/** `fetch`, addressed to the project currently on screen. */
+export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(withProject(path), init);
+}
+
+export interface ProjectList {
+  projects: ProjectSummary[];
+  /** The project syl was started in — what a fresh tab opens on. */
+  defaultId: string | null;
+  /** Where the list is stored, so the UI can say what it is editing. */
+  registryPath: string;
+}
+
+export async function fetchProjects(): Promise<ProjectList> {
+  const res = await fetch("/api/projects");
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to list projects");
+  return data;
+}
+
+/** Registers another checkout by absolute path (a leading `~` is expanded). */
+export async function addProject(path: string): Promise<ProjectSummary> {
+  const res = await fetch("/api/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to add the project");
+  return data.project;
+}
+
+/** Forgets a checkout. Its `.syl/` directory is left exactly where it is. */
+export async function removeProject(id: string): Promise<void> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to remove the project");
+  }
+}
+
 export async function fetchFileTree(): Promise<FileNode[]> {
-  const res = await fetch("/api/files/tree");
+  const res = await apiFetch("/api/files/tree");
   return res.json();
 }
 
 export async function fetchFileContent(
   path: string
 ): Promise<{ path: string; content: string }> {
-  const res = await fetch(`/api/files/read?path=${encodeURIComponent(path)}`);
+  const res = await apiFetch(`/api/files/read?path=${encodeURIComponent(path)}`);
   if (!res.ok) throw new Error("Failed to read file");
   return res.json();
 }
@@ -45,14 +110,14 @@ export async function fetchFileContent(
 export async function fetchAnnotations(
   file: string
 ): Promise<AnnotationFile> {
-  const res = await fetch(`/api/annotations?file=${encodeURIComponent(file)}`);
+  const res = await apiFetch(`/api/annotations?file=${encodeURIComponent(file)}`);
   return res.json();
 }
 
 export async function resolveAnnotations(
   file: string
 ): Promise<ResolveResponse> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/annotations/resolve?file=${encodeURIComponent(file)}`
   );
   return res.json();
@@ -64,7 +129,7 @@ export async function addAnnotation(
   body: string,
   author: string = "anonymous"
 ): Promise<Annotation> {
-  const res = await fetch("/api/annotations", {
+  const res = await apiFetch("/api/annotations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ file, path: semanticPath, body, author }),
@@ -78,7 +143,7 @@ export async function updateAnnotation(
   semanticPath: string,
   body: string
 ): Promise<Annotation> {
-  const res = await fetch(`/api/annotations/${id}`, {
+  const res = await apiFetch(`/api/annotations/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ file, path: semanticPath, body }),
@@ -91,7 +156,7 @@ export async function deleteAnnotation(
   file: string,
   semanticPath: string
 ): Promise<void> {
-  await fetch(`/api/annotations/${id}`, {
+  await apiFetch(`/api/annotations/${id}`, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ file, path: semanticPath }),
@@ -103,7 +168,7 @@ export async function resolveLinks(
   refs: string[]
 ): Promise<Record<string, LinkTarget | null>> {
   if (refs.length === 0) return {};
-  const res = await fetch("/api/links/resolve", {
+  const res = await apiFetch("/api/links/resolve", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ file, refs }),
@@ -119,7 +184,7 @@ export async function fetchRemotes(): Promise<{
   remotes: GitRemote[];
   defaults: { scout: string | null; reviewer: string | null };
 }> {
-  const res = await fetch("/api/review/remotes");
+  const res = await apiFetch("/api/review/remotes");
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to list git remotes");
   return data;
@@ -129,7 +194,7 @@ export async function fetchPullRequests(
   repo: string,
   filter: PullRequestFilter
 ): Promise<PullRequestSummary[]> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/review/prs?repo=${encodeURIComponent(repo)}&${pullRequestFilterQuery(filter)}`
   );
   const data = await res.json();
@@ -146,7 +211,7 @@ export async function startReview(params: {
   /** Skip the local cache and pay for the models again. */
   refresh?: boolean;
 }): Promise<string> {
-  const res = await fetch("/api/review", {
+  const res = await apiFetch("/api/review", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
@@ -160,7 +225,7 @@ export async function startReview(params: {
 export async function fetchReviewRuns(
   limit?: number
 ): Promise<ReviewRunSummary[]> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/review/runs${limit ? `?limit=${limit}` : ""}`
   );
   const data = await res.json();
@@ -178,14 +243,14 @@ export interface ReviewCacheInfo {
 }
 
 export async function fetchReviewCacheInfo(): Promise<ReviewCacheInfo> {
-  const res = await fetch("/api/review/cache");
+  const res = await apiFetch("/api/review/cache");
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to read the review cache");
   return data;
 }
 
 export async function deleteReviewRun(id: string): Promise<void> {
-  const res = await fetch(`/api/review/runs/${id}`, { method: "DELETE" });
+  const res = await apiFetch(`/api/review/runs/${id}`, { method: "DELETE" });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || "Failed to delete the review");
@@ -193,7 +258,7 @@ export async function deleteReviewRun(id: string): Promise<void> {
 }
 
 export async function clearReviewCache(): Promise<number> {
-  const res = await fetch("/api/review/runs", { method: "DELETE" });
+  const res = await apiFetch("/api/review/runs", { method: "DELETE" });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to clear the cache");
   return data.removed ?? 0;
@@ -216,14 +281,14 @@ export interface ReviewRefreshResult {
 export async function refreshReviewRun(
   id: string
 ): Promise<ReviewRefreshResult> {
-  const res = await fetch(`/api/review/${id}/refresh`, { method: "POST" });
+  const res = await apiFetch(`/api/review/${id}/refresh`, { method: "POST" });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to refresh the review");
   return data;
 }
 
 export async function discardOutdatedComments(id: string): Promise<number> {
-  const res = await fetch(`/api/review/${id}/comments/discard-outdated`, {
+  const res = await apiFetch(`/api/review/${id}/comments/discard-outdated`, {
     method: "POST",
   });
   const data = await res.json();
@@ -232,7 +297,7 @@ export async function discardOutdatedComments(id: string): Promise<number> {
 }
 
 export async function fetchReviewRun(id: string): Promise<ReviewRun> {
-  const res = await fetch(`/api/review/${id}`);
+  const res = await apiFetch(`/api/review/${id}`);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to load review");
   return data.run;
@@ -258,7 +323,7 @@ export async function fetchReviewFileContext(
     start: String(start),
     end: String(end),
   });
-  const res = await fetch(`/api/review/${runId}/context?${query}`);
+  const res = await apiFetch(`/api/review/${runId}/context?${query}`);
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to expand the diff");
   return data;
@@ -274,7 +339,7 @@ export async function addReviewComment(
     fromFinding?: string | null;
   }
 ): Promise<DraftComment> {
-  const res = await fetch(`/api/review/${runId}/comments`, {
+  const res = await apiFetch(`/api/review/${runId}/comments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -289,7 +354,7 @@ export async function updateReviewComment(
   commentId: string,
   body: string
 ): Promise<DraftComment> {
-  const res = await fetch(`/api/review/${runId}/comments/${commentId}`, {
+  const res = await apiFetch(`/api/review/${runId}/comments/${commentId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ body }),
@@ -303,7 +368,7 @@ export async function deleteReviewComment(
   runId: string,
   commentId: string
 ): Promise<void> {
-  const res = await fetch(`/api/review/${runId}/comments/${commentId}`, {
+  const res = await apiFetch(`/api/review/${runId}/comments/${commentId}`, {
     method: "DELETE",
   });
   if (!res.ok) {
@@ -316,7 +381,7 @@ export async function submitReview(
   runId: string,
   input: { body: string; event: ReviewEvent }
 ): Promise<SubmittedReview> {
-  const res = await fetch(`/api/review/${runId}/submit`, {
+  const res = await apiFetch(`/api/review/${runId}/submit`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -347,7 +412,7 @@ export async function fetchChannelSessions(): Promise<{
   sessions: ChannelSession[];
   setup: ChannelSetup | null;
 }> {
-  const res = await fetch("/api/channel/sessions");
+  const res = await apiFetch("/api/channel/sessions");
   if (!res.ok) return { sessions: [], setup: null };
   return res.json();
 }
@@ -360,7 +425,7 @@ export async function pushToSession(input: {
   message?: string;
   context?: { file?: string | null; line?: number | null; finding?: string | null };
 }): Promise<void> {
-  const res = await fetch("/api/channel/push", {
+  const res = await apiFetch("/api/channel/push", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -378,7 +443,7 @@ export interface GenerateStatus {
 }
 
 export async function checkGenerateStatus(): Promise<GenerateStatus> {
-  const res = await fetch("/api/generate/status");
+  const res = await apiFetch("/api/generate/status");
   return res.json();
 }
 
@@ -387,7 +452,7 @@ export async function generateAnnotation(
   model: string,
   semanticPath: string
 ): Promise<{ ok: boolean; count: number }> {
-  const res = await fetch("/api/generate", {
+  const res = await apiFetch("/api/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ file, model, semanticPath }),
@@ -408,7 +473,7 @@ export async function generateOriginalAnnotations(
   file: string,
   model: string
 ): Promise<{ ok: boolean; count: number }> {
-  const res = await fetch(`/api/review/${runId}/generate-original`, {
+  const res = await apiFetch(`/api/review/${runId}/generate-original`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ file, model }),
@@ -422,7 +487,7 @@ export async function generateFileAnnotations(
   file: string,
   model: string
 ): Promise<{ ok: boolean; count: number }> {
-  const res = await fetch("/api/generate", {
+  const res = await apiFetch("/api/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ file, model }),

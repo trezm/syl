@@ -15,6 +15,7 @@ import {
   fetchReviewCacheInfo,
   type ReviewCacheInfo,
 } from "../api";
+import { projectKey, useProject } from "../projects/ProjectContext";
 
 const PHASE_LABEL: Record<ReviewPhase, string> = {
   fetching: "Fetching pull request and diff",
@@ -87,6 +88,11 @@ function Progress({ run, onBack }: { run: ReviewRun; onBack: () => void }) {
   );
 }
 
+/**
+ * Run ids are only meaningful inside the project that produced them — each
+ * project has its own review cache — so what to reopen is remembered per
+ * project. Which landing tab you were on is a preference, and stays shared.
+ */
 const LAST_RUN_KEY = "syl-last-review-run";
 const LANDING_TAB_KEY = "syl-review-landing-tab";
 
@@ -208,10 +214,12 @@ export default function ReviewView({
   /** Follows a link inside an annotation shown in the diff, over in the annotate tab. */
   onNavigate?: (target: LinkTarget) => void;
 }) {
+  const lastRunKey = projectKey(LAST_RUN_KEY, useProject().project.id);
+
   // Runs live on the server, so a reload can pick the last one back up.
   const [runId, setRunId] = useState<string | null>(() => {
     try {
-      return localStorage.getItem(LAST_RUN_KEY);
+      return localStorage.getItem(lastRunKey);
     } catch {
       return null;
     }
@@ -237,7 +245,7 @@ export default function ReviewView({
         if (cancelled) return;
         // A stale id from a previous server process just means "start over".
         try {
-          localStorage.removeItem(LAST_RUN_KEY);
+          localStorage.removeItem(lastRunKey);
         } catch {
           // ignore
         }
@@ -263,7 +271,7 @@ export default function ReviewView({
     setRun(null);
     setRunId(id);
     try {
-      localStorage.setItem(LAST_RUN_KEY, id);
+      localStorage.setItem(lastRunKey, id);
     } catch {
       // ignore
     }
@@ -310,7 +318,7 @@ export default function ReviewView({
     setRun(null);
     setError(null);
     try {
-      localStorage.removeItem(LAST_RUN_KEY);
+      localStorage.removeItem(lastRunKey);
     } catch {
       // ignore
     }

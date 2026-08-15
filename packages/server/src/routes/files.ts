@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isIgnoredEntry } from "../util/project-files.js";
+import type { Workspace } from "../projects/workspace.js";
 
 export interface FileNode {
   name: string;
@@ -40,15 +41,17 @@ async function buildTree(dirPath: string, relativeTo: string): Promise<FileNode[
   });
 }
 
-export function fileRoutes(projectRoot: string) {
+export function fileRoutes(workspace: Workspace) {
   const app = new Hono();
 
   app.get("/tree", async (c) => {
-    const tree = await buildTree(projectRoot, projectRoot);
+    const { root } = workspace.require(c);
+    const tree = await buildTree(root, root);
     return c.json(tree);
   });
 
   app.get("/read", async (c) => {
+    const { root: projectRoot } = workspace.require(c);
     const filePath = c.req.query("path");
     if (!filePath) return c.json({ error: "path required" }, 400);
 

@@ -30,9 +30,14 @@ function loadSqlite(): SqliteModule | null {
   }
 }
 
-export function reviewDbPath(projectRoot: string): string {
+/**
+ * `SYL_REVIEW_DB` names one file, so it can only stand in for one project's
+ * cache — the project syl was started in. Every other registered project keeps
+ * its own, because a shared file would mix repositories together in one history.
+ */
+export function reviewDbPath(projectRoot: string, allowOverride = true): string {
   const override = process.env.SYL_REVIEW_DB;
-  if (override) return path.resolve(override);
+  if (override && allowOverride) return path.resolve(override);
   return path.join(projectRoot, ".syl", "cache", "reviews.db");
 }
 
@@ -64,7 +69,7 @@ export class ReviewStore {
   ) {}
 
   /** Returns null when SQLite isn't available or the file can't be opened. */
-  static open(projectRoot: string): ReviewStore | null {
+  static open(projectRoot: string, allowDbOverride = true): ReviewStore | null {
     const sqlite = loadSqlite();
     if (!sqlite) {
       console.warn(
@@ -73,7 +78,7 @@ export class ReviewStore {
       return null;
     }
 
-    const dbPath = reviewDbPath(projectRoot);
+    const dbPath = reviewDbPath(projectRoot, allowDbOverride);
     try {
       prepareDir(dbPath);
       const db = new sqlite.DatabaseSync(dbPath);

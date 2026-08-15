@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Finding } from "@syl/core";
 import { sortFindings } from "@syl/core";
-import type { ReviewRunner } from "../review/runner.js";
+import type { Workspace } from "../projects/workspace.js";
 import { listSessions, push, setupHint } from "../channel/sessions.js";
 import { findingPayload, questionPayload } from "../channel/payloads.js";
 
@@ -11,15 +11,19 @@ function messageFor(e: unknown): string {
 
 /**
  * The channel endpoints: what Claude Code sessions are listening, and pushing a
- * review event into one. The runner is passed in so payloads are built from the
- * stored run rather than from whatever the browser sends.
+ * review event into one. Payloads are built from the project's stored run
+ * rather than from whatever the browser sends.
+ *
+ * Sessions themselves are machine-wide — every Claude Code session on this
+ * machine is listed whichever project you are in, and it's `matchesProject`
+ * that says which of them is working in the one you're looking at.
  */
-export function channelRoutes(projectRoot: string, runner: ReviewRunner) {
+export function channelRoutes(workspace: Workspace) {
   const app = new Hono();
 
   // GET /api/channel/sessions — sessions with syl's channel loaded, right now
   app.get("/sessions", (c) => {
-    const sessions = listSessions(projectRoot);
+    const sessions = listSessions(workspace.require(c).root);
     return c.json({
       sessions,
       // Setup only matters when there's nothing to push to; sending it always
@@ -30,6 +34,7 @@ export function channelRoutes(projectRoot: string, runner: ReviewRunner) {
 
   // POST /api/channel/push — send a finding or a question to one session
   app.post("/push", async (c) => {
+    const { runner } = workspace.require(c);
     const body = await c.req.json<{
       sessionId?: string;
       runId?: string;

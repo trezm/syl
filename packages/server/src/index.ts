@@ -11,8 +11,13 @@ import { generateRoutes } from "./routes/generate.js";
 import { linkRoutes } from "./routes/links.js";
 import { reviewRoutes } from "./routes/review.js";
 import { channelRoutes } from "./routes/channel.js";
-import { ReviewRunner } from "./review/runner.js";
-import { ProjectIndex } from "./links/project-index.js";
+import { projectRoutes } from "./routes/projects.js";
+import {
+  ProjectNotFoundError,
+  ProjectRegistry,
+  registryPath,
+} from "./projects/registry.js";
+import { Workspace } from "./projects/workspace.js";
 
 // Import language registrations
 import "@syl/core";
@@ -20,11 +25,6 @@ import "@syl/core";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
-// npm runs workspace scripts with cwd set to the workspace dir, so process.cwd()
-// would resolve to packages/server. INIT_CWD is where npm was actually invoked.
-const projectRoot = path.resolve(
-  process.env.SYL_PROJECT_ROOT || process.env.INIT_CWD || process.cwd()
-);
 const port = parseInt(process.env.PORT || "3000", 10);
 
 // Resolve WASM directories
@@ -35,24 +35,33 @@ const app = new Hono();
 
 app.use("*", cors());
 
-const projectIndex = new ProjectIndex(
-  projectRoot,
+// One server, any number of checkouts: the workspace holds each project's index,
+// review runner and annotation store, and every route below picks one out of it
+// by the request's `?project=` — see Workspace.require.
+const workspace = new Workspace(
+  ProjectRegistry.load(),
   grammarWasmDir,
   treeSitterWasmDir
 );
 
+// A request naming a project this server doesn't have is a 404 wherever it is
+// raised, so the routes throw it and it's answered once, here.
+app.onError((err, c) => {
+  if (err instanceof ProjectNotFoundError) {
+    return c.json({ error: err.message, unknownProject: true }, 404);
+  }
+  console.error(err);
+  return c.json({ error: err.message || "Internal error" }, 500);
+});
+
 // API routes
-app.route("/api/files", fileRoutes(projectRoot));
-app.route("/api/annotations", annotationRoutes(projectRoot, grammarWasmDir, treeSitterWasmDir));
-app.route("/api/generate", generateRoutes(projectRoot, grammarWasmDir, treeSitterWasmDir));
-app.route("/api/links", linkRoutes(projectRoot, projectIndex));
-// One runner, shared: the channel builds its payloads from stored runs.
-const reviewRunner = new ReviewRunner(projectRoot);
-app.route(
-  "/api/review",
-  reviewRoutes(projectRoot, reviewRunner, grammarWasmDir, treeSitterWasmDir)
-);
-app.route("/api/channel", channelRoutes(projectRoot, reviewRunner));
+app.route("/api/projects", projectRoutes(workspace));
+app.route("/api/files", fileRoutes(workspace));
+app.route("/api/annotations", annotationRoutes(workspace, grammarWasmDir, treeSitterWasmDir));
+app.route("/api/generate", generateRoutes(workspace, grammarWasmDir, treeSitterWasmDir));
+app.route("/api/links", linkRoutes(workspace));
+app.route("/api/review", reviewRoutes(workspace, grammarWasmDir, treeSitterWasmDir));
+app.route("/api/channel", channelRoutes(workspace));
 
 // Serve WASM files — check tree-sitter runtime dir first, then grammar dir
 app.get("/wasm/:file", async (c) => {
@@ -71,7 +80,14 @@ app.get("/wasm/:file", async (c) => {
   return c.json({ error: "wasm file not found" }, 404);
 });
 
+const projects = workspace.list();
 console.log(`Syl server running on http://localhost:${port}`);
-console.log(`Project root: ${projectRoot}`);
+console.log(
+  projects.length > 0
+    ? `Projects (${registryPath()}):\n${projects
+        .map((p) => `  ${p.id} → ${p.root}`)
+        .join("\n")}`
+    : `No projects registered yet — add one in the UI. (${registryPath()})`
+);
 
 serve({ fetch: app.fetch, port });

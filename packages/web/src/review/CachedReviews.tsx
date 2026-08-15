@@ -44,8 +44,8 @@ export default function CachedReviews({
     );
   }, [runs, query]);
 
-  // Grouped by repository: syl is pointed at one project, but a project can
-  // have several remotes, and a fork's reviews shouldn't interleave with the
+  // Grouped by repository: this is one project's cache, but a project can have
+  // several remotes, and a fork's reviews shouldn't interleave with the
   // upstream's.
   const groups = useMemo(() => {
     const byRepo = new Map<string, ReviewRunSummary[]>();
