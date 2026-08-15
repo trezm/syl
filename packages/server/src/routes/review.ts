@@ -1,8 +1,6 @@
 import { Hono } from "hono";
-import path from "node:path";
 import type { ReviewCommentSide, ReviewEvent } from "@syl/core";
 import {
-  AnnotationStore,
   getLanguageForFile,
   parsePullRequestFilter,
   parseUnifiedDiff,
@@ -14,12 +12,12 @@ import {
   describeGhError,
 } from "../review/github.js";
 import { describeCommandFailure } from "../review/exec.js";
-import { ReviewRunner, MAX_CONTEXT_LINES } from "../review/runner.js";
+import { MAX_CONTEXT_LINES } from "../review/runner.js";
 import { MAX_STORED_RUNS } from "../review/store.js";
 import { defaultReviewModels, resolveModel } from "../ai/models.js";
 import { generateAnnotations } from "../ai/generate.js";
-import { nodeFs } from "../util/node-fs.js";
 import { semanticPathsFor } from "../util/semantic-paths.js";
+import type { Workspace } from "../projects/workspace.js";
 
 function messageFor(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -38,18 +36,22 @@ function logFailure(what: string, e: unknown): void {
   console.error(`${what} failed:\n  ${describeCommandFailure(e)}`);
 }
 
-/** The runner is owned by the caller, so the channel routes can share it. */
+/**
+ * Every run belongs to the project it was started in: its cache, its `gh`
+ * invocations and its annotations all sit under that checkout. The workspace is
+ * what turns a request's `?project=` into the runner and store to use, and the
+ * channel routes reach the same per-project runner through it.
+ */
 export function reviewRoutes(
-  projectRoot: string,
-  runner: ReviewRunner,
+  workspace: Workspace,
   wasmDir: string,
   treeSitterWasmDir: string
 ) {
   const app = new Hono();
-  const store = new AnnotationStore(path.join(projectRoot, ".syl"), nodeFs());
 
-  // GET /api/review/remotes — git remotes of the project syl is pointed at
+  // GET /api/review/remotes — git remotes of the project this request is about
   app.get("/remotes", async (c) => {
+    const { root: projectRoot } = workspace.require(c);
     try {
       const remotes = await listRemotes(projectRoot);
       return c.json({ remotes, defaults: await defaultReviewModels() });
@@ -63,6 +65,7 @@ export function reviewRoutes(
   // the picker. `involvement` is a comma-separated subset of authored,
   // assigned and review-requested, ORed together; empty means everyone's.
   app.get("/prs", async (c) => {
+    const { root: projectRoot } = workspace.require(c);
     const repo = c.req.query("repo");
     if (!repo) return c.json({ error: "repo is required" }, 400);
     const filter = parsePullRequestFilter({
@@ -80,6 +83,7 @@ export function reviewRoutes(
 
   // POST /api/review — kick off a scout + reviewer run
   app.post("/", async (c) => {
+    const { runner } = workspace.require(c);
     const body = await c.req.json<{
       remote?: string;
       repo?: string;
@@ -124,6 +128,7 @@ export function reviewRoutes(
 
   // GET /api/review/runs — past runs, newest first, from the local cache
   app.get("/runs", (c) => {
+    const { runner } = workspace.require(c);
     const limit = Number(c.req.query("limit"));
     return c.json({
       runs: runner.list(
@@ -136,11 +141,12 @@ export function reviewRoutes(
 
   // DELETE /api/review/runs — empty the cache
   app.delete("/runs", (c) => {
-    return c.json({ removed: runner.forgetAll() });
+    return c.json({ removed: workspace.require(c).runner.forgetAll() });
   });
 
   // DELETE /api/review/runs/:id — forget one cached run
   app.delete("/runs/:id", (c) => {
+    const { runner } = workspace.require(c);
     try {
       runner.forget(c.req.param("id"));
       return c.json({ ok: true });
@@ -151,11 +157,11 @@ export function reviewRoutes(
 
   // GET /api/review/cache — where the cache is and how much is in it. Declared
   // before /:id, which would otherwise read "cache" as a run id.
-  app.get("/cache", (c) => c.json(runner.cacheInfo()));
+  app.get("/cache", (c) => c.json(workspace.require(c).runner.cacheInfo()));
 
   // GET /api/review/:id — full run, including the diff once fetched
   app.get("/:id", (c) => {
-    const run = runner.get(c.req.param("id"));
+    const run = workspace.require(c).runner.get(c.req.param("id"));
     if (!run) return c.json({ error: "run not found" }, 404);
     return c.json({ run });
   });
@@ -163,6 +169,7 @@ export function reviewRoutes(
   // GET /api/review/:id/context?path&start&end — lines the diff leaves out, so
   // the reviewer can expand around a hunk
   app.get("/:id/context", async (c) => {
+    const { runner } = workspace.require(c);
     const path = c.req.query("path");
     const start = Number(c.req.query("start"));
     const end = Number(c.req.query("end"));
@@ -189,6 +196,7 @@ export function reviewRoutes(
   // POST /api/review/:id/refresh — re-fetch the pull request into an existing
   // run: new commits, a new title, and whatever that strands. No model calls.
   app.post("/:id/refresh", async (c) => {
+    const { runner } = workspace.require(c);
     try {
       const { run, changed, outdated, adopted } = await runner.refresh(
         c.req.param("id")
@@ -203,6 +211,7 @@ export function reviewRoutes(
   // POST /api/review/:id/comments/discard-outdated — drop the comments a
   // refresh stranded, which is what unblocks submitting the rest
   app.post("/:id/comments/discard-outdated", (c) => {
+    const { runner } = workspace.require(c);
     try {
       return c.json({ removed: runner.discardOutdatedComments(c.req.param("id")) });
     } catch (e) {
@@ -212,6 +221,7 @@ export function reviewRoutes(
 
   // POST /api/review/:id/comments — stage an inline comment locally
   app.post("/:id/comments", async (c) => {
+    const { runner } = workspace.require(c);
     const body = await c.req.json<{
       path?: string;
       line?: number;
@@ -242,6 +252,7 @@ export function reviewRoutes(
 
   // PATCH /api/review/:id/comments/:commentId — edit a staged comment
   app.patch("/:id/comments/:commentId", async (c) => {
+    const { runner } = workspace.require(c);
     const body = await c.req.json<{ body?: string }>();
     try {
       const comment = runner.updateComment(
@@ -257,6 +268,7 @@ export function reviewRoutes(
 
   // DELETE /api/review/:id/comments/:commentId — discard a staged comment
   app.delete("/:id/comments/:commentId", (c) => {
+    const { runner } = workspace.require(c);
     try {
       runner.deleteComment(c.req.param("id"), c.req.param("commentId"));
       return c.json({ ok: true });
@@ -269,6 +281,7 @@ export function reviewRoutes(
   // this pull request. Annotations are saved to .syl/ under the file's current
   // path, exactly like a generation run from the annotate tab.
   app.post("/:id/generate-original", async (c) => {
+    const { root: projectRoot, runner, store } = workspace.require(c);
     const body = await c.req.json<{ file?: string; model?: string }>();
 
     const run = runner.get(c.req.param("id"));
@@ -361,6 +374,7 @@ export function reviewRoutes(
 
   // POST /api/review/:id/submit — publish the staged comments to GitHub
   app.post("/:id/submit", async (c) => {
+    const { runner } = workspace.require(c);
     const body = await c.req.json<{ body?: string; event?: ReviewEvent }>();
     const event: ReviewEvent =
       body.event === "APPROVE" || body.event === "REQUEST_CHANGES"

@@ -15,6 +15,7 @@ import ModelSelector, {
 import GenerateButton from "./components/GenerateButton";
 import { useTreeSitter } from "./hooks/useTreeSitter";
 import ReviewView from "./review/ReviewView";
+import ProjectSwitcher from "./projects/ProjectSwitcher";
 import type { ResolvedLinks } from "./components/AnnotationBody";
 import {
   fetchFileContent,
@@ -265,6 +266,9 @@ export default function App() {
         <h1 className="text-sm font-semibold tracking-wide text-gray-300">
           syl
         </h1>
+        <div className="ml-3">
+          <ProjectSwitcher />
+        </div>
         <nav className="ml-4 flex items-center gap-1">
           {(["annotate", "review"] as Mode[]).map((m) => (
             <button

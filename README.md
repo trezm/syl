@@ -11,11 +11,36 @@ npm run dev
 
 This starts both the API server (port 3000) and the web UI (port 5173). Open http://localhost:5173.
 
-By default, Syl annotates the project in the current working directory. To point at a different project:
+The first run registers the project in the current working directory. To start
+somewhere else, or with several projects at once:
 
 ```bash
 SYL_PROJECT_ROOT=/path/to/project npm run dev
+SYL_PROJECTS=/path/to/one:/path/to/another npm run dev
 ```
+
+## One server, several repositories
+
+Syl holds any number of checkouts at once — one server, one port, and a
+switcher in the header rather than an instance per repository. The **⋯** beside
+it is where a project is added (type its path; `~` works) or forgotten, and both
+take effect immediately: nothing here needs a restart.
+
+The list of projects lives in `~/.syl/projects.json` (override the directory
+with `SYL_HOME`), seeded on first run from `SYL_PROJECTS`, `SYL_PROJECT_ROOT` or
+the working directory. Forgetting a project only removes that entry — the
+checkout's `.syl/` directory, annotations and review cache included, is left
+exactly where it is, and adding it back picks all of it up again.
+
+Everything a project owns stays inside it: annotations under its own `.syl/`,
+its own review cache, its own symbol index for annotation links, and `git` and
+`gh` always run in the checkout the request is about. The one exception is the
+`SYL_REVIEW_DB` override below, which names a single file and so applies only to
+the project Syl was started in.
+
+The selected project is part of the URL — `http://localhost:5173/?project=syl`.
+Two browser windows on two projects work the way you'd expect, and a reload
+comes back to the one you were in.
 
 ## PR Review
 
@@ -24,7 +49,7 @@ style of [firstpass](https://github.com/trezm/firstpass): a cheap **scout** mode
 triages the diff into focus areas, then a stronger **reviewer** produces only
 high-confidence findings.
 
-Syl reads the git remotes of whatever project it is pointed at, you pick a remote
+Syl reads the git remotes of the project you're in, you pick a remote
 and a PR number, and the result opens as a GitHub-style review page: the diff with
 findings anchored as inline comments on the line they refer to, plus a findings
 sidebar and the reviewer's summary. The diff renders **unified or side-by-side** —
@@ -110,8 +135,11 @@ rather than API tokens.
 
 Reviews are expensive, and re-reviewing an unchanged pull request produces the
 same findings twice. So every run is written to a small SQLite database at
-`.syl/cache/reviews.db` (override with `SYL_REVIEW_DB`), and reviewing a PR
-whose inputs match a stored run skips the models entirely and reuses it.
+`.syl/cache/reviews.db` — one per project — and reviewing a PR whose inputs
+match a stored run skips the models entirely and reuses it. `SYL_REVIEW_DB`
+moves that file elsewhere for the project Syl was started in; every other
+registered project keeps its own, since one file can't hold two repositories'
+histories without mixing them.
 
 "Inputs" is the whole prompt, hashed: the diff, the PR title, description and
 branches, both model ids, and the prompt text itself. Push a commit, retitle the

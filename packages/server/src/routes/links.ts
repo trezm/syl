@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parseRef, type AnnotationFile, type LinkTarget } from "@syl/core";
-import type { ProjectIndex } from "../links/project-index.js";
+import type { Workspace } from "../projects/workspace.js";
 
 const MAX_REFS = 200;
 
@@ -46,12 +46,13 @@ async function findAnnotation(
   return walk(sylDir);
 }
 
-export function linkRoutes(projectRoot: string, index: ProjectIndex) {
+export function linkRoutes(workspace: Workspace) {
   const app = new Hono();
-  const sylDir = path.join(projectRoot, ".syl");
 
   // POST /api/links/resolve — batch-resolve refs found in annotation bodies
   app.post("/resolve", async (c) => {
+    const { root, index } = workspace.require(c);
+    const sylDir = path.join(root, ".syl");
     const { file, refs } = await c.req.json<{
       file?: string;
       refs?: string[];
