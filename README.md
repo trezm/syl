@@ -321,7 +321,7 @@ export OPENAI_API_KEY=sk-...          # only needed without the codex CLI
 | Provider | Models |
 | --- | --- |
 | Claude | Opus 5 (default), Sonnet 5, Haiku 4.5 |
-| ChatGPT | GPT-5, GPT-5 mini, GPT-4.1, GPT-4o |
+| ChatGPT | GPT-5.6 Sol, GPT-5.6 Terra, GPT-5.6 Luna, GPT-5, GPT-5 mini, GPT-4.1, GPT-4o |
 
 OpenAI model availability varies by account and tier. To use a different set,
 override the list:

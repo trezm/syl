@@ -110,8 +110,20 @@ export async function defaultReviewModels(): Promise<{
     null;
 
   return {
-    scout: pick(["claude-haiku-4-5", "gpt-5-mini", "claude-sonnet-5", "gpt-4o"]),
-    reviewer: pick(["claude-opus-5", "gpt-5", "claude-sonnet-5", "gpt-4.1"]),
+    scout: pick([
+      "claude-haiku-4-5",
+      "gpt-5.6-luna",
+      "gpt-5-mini",
+      "claude-sonnet-5",
+      "gpt-4o",
+    ]),
+    reviewer: pick([
+      "claude-opus-5",
+      "gpt-5.6-sol",
+      "gpt-5",
+      "claude-sonnet-5",
+      "gpt-4.1",
+    ]),
   };
 }
 
