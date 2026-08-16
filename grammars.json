@@ -1,0 +1,62 @@
+{
+  "comment": [
+    "The languages syl can parse. Each entry names the npm package holding the",
+    "grammar source; `npm run grammars:build` compiles it to grammars/<wasm> with",
+    "tree-sitter-cli, and that output is committed.",
+    "",
+    "Adding a language means adding an entry here, running the build, and writing",
+    "a LanguagePathConfig for it in packages/core/src/tree-sitter/languages/.",
+    "Versions are exact on purpose: the wasm in grammars/ is the build product of",
+    "this file, and a range would let two checkouts disagree about what that is."
+  ],
+  "grammars": [
+    {
+      "id": "typescript",
+      "package": "tree-sitter-typescript",
+      "version": "0.23.2",
+      "dir": "typescript"
+    },
+    {
+      "id": "tsx",
+      "package": "tree-sitter-typescript",
+      "version": "0.23.2",
+      "dir": "tsx"
+    },
+    {
+      "id": "javascript",
+      "package": "tree-sitter-javascript",
+      "version": "0.25.0"
+    },
+    {
+      "id": "python",
+      "package": "tree-sitter-python",
+      "version": "0.25.0"
+    },
+    {
+      "id": "rust",
+      "package": "tree-sitter-rust",
+      "version": "0.24.0"
+    },
+    {
+      "id": "go",
+      "package": "tree-sitter-go",
+      "version": "0.25.0"
+    },
+    {
+      "id": "swift",
+      "package": "tree-sitter-swift",
+      "version": "0.7.1"
+    },
+    {
+      "comment": [
+        "fwcd's grammar, which is the one tree-sitter-wasms shipped and the one",
+        "languages/kotlin.ts was written against. @tree-sitter-grammars' rewrite",
+        "names declarations differently and parses `object X { }` as an ERROR",
+        "that swallows the rest of the file, so it is not a drop-in."
+      ],
+      "id": "kotlin",
+      "package": "tree-sitter-kotlin",
+      "version": "0.3.8"
+    }
+  ]
+}

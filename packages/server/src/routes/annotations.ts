@@ -82,6 +82,7 @@ export function annotationRoutes(
       const wasmPath = path.join(wasmDir, langConfig.wasmFile);
       const parser = await createParser(wasmPath, treeSitterWasmDir);
       const tree = parser.parse(content);
+      if (!tree) return c.json({ error: `Could not parse ${file}` }, 500);
 
       const pathResult = buildSemanticPaths(tree, content, langConfig);
       const annotationFile = await store.load(file);

@@ -33,7 +33,7 @@
     "codemirror": "^6.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "web-tree-sitter": "^0.24.7"
+    "web-tree-sitter": "0.26.12"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

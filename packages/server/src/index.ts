@@ -21,15 +21,39 @@ import { Workspace } from "./projects/workspace.js";
 
 // Import language registrations
 import "@syl/core";
+import { getAllLanguages } from "@syl/core";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
 const port = parseInt(process.env.PORT || "3000", 10);
 
-// Resolve WASM directories
-const grammarWasmDir = path.join(path.dirname(require.resolve("tree-sitter-wasms/package.json")), "out");
-const treeSitterWasmDir = path.dirname(require.resolve("web-tree-sitter/tree-sitter.wasm"));
+// Grammars are built from grammars.json by `npm run grammars:build` and
+// committed, so they sit in the repo rather than in node_modules. Resolved from
+// this module rather than cwd, so the path holds wherever syl was started.
+const grammarWasmDir = path.resolve(__dirname, "../../../grammars");
+const treeSitterWasmDir = path.dirname(
+  require.resolve("web-tree-sitter/web-tree-sitter.wasm")
+);
+
+/**
+ * A registered language whose grammar was never built parses nothing, and the
+ * symptom — no semantic paths, so no annotations and no Generate button — reads
+ * as a broken feature rather than a missing file. Say so at startup instead.
+ */
+function warnAboutMissingGrammars(): void {
+  const missing = getAllLanguages()
+    .map((lang) => lang.wasmFile)
+    .filter((file) => !fs.existsSync(path.join(grammarWasmDir, file)));
+  if (missing.length === 0) return;
+
+  const ids = missing.map((f) => f.replace(/^tree-sitter-|\.wasm$/g, ""));
+  console.warn(
+    `[syl] No grammar for ${ids.join(", ")} in ${grammarWasmDir}.\n` +
+      `      Those files won't parse. Build them with:\n` +
+      `        npm run grammars:build -- ${ids.join(" ")}`
+  );
+}
 
 const app = new Hono();
 
@@ -79,6 +103,8 @@ app.get("/wasm/:file", async (c) => {
   }
   return c.json({ error: "wasm file not found" }, 404);
 });
+
+warnAboutMissingGrammars();
 
 const projects = workspace.list();
 console.log(`Syl server running on http://localhost:${port}`);

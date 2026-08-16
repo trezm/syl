@@ -19,6 +19,51 @@ SYL_PROJECT_ROOT=/path/to/project npm run dev
 SYL_PROJECTS=/path/to/one:/path/to/another npm run dev
 ```
 
+## Grammars
+
+Syl parses with tree-sitter to derive the semantic paths annotations are
+addressed by. The grammars are compiled to wasm from the list in
+`grammars.json` and **committed** under `grammars/`, so a plain `npm install`
+needs no toolchain at all — this section only matters when you change the
+language set.
+
+```bash
+npm run grammars:build              # all of them
+npm run grammars:build -- swift go  # just these
+npm run grammars:check              # what CI runs: every listed grammar present
+```
+
+Adding a language is three steps: an entry in `grammars.json`, a build, and a
+`LanguagePathConfig` in `packages/core/src/tree-sitter/languages/`. Versions in
+that file are exact, because the wasm in `grammars/` is its build product and a
+range would let two checkouts disagree about what that is.
+
+The build is a separate command rather than a `postinstall` hook on purpose:
+the first run downloads a ~106 MB wasi-sdk into `~/.cache/tree-sitter`, and on
+a machine without it that download is several silent minutes in the middle of
+`npm install` — a cost paid by everyone, including people who only touch the
+web app.
+
+Grammars used to come prebuilt from `tree-sitter-wasms`, which still compiles
+with `tree-sitter-cli` 0.20. Those are emscripten side modules, and loading
+several of them kills newer V8 outright — a fatal `out of memory: Zone` in the
+background wasm compiler, at a few hundred MB RSS, which took the API server
+down with it. That is what the old `engines` ceiling of `<23` was working
+around. Building with a current CLI produces ordinary modules that don't, so
+the ceiling is gone; syl is verified on Node 20, 22 and 25.
+
+One caveat if you run a very recent Node: V8 there holds far more memory for
+the same parsing work — the seven-language fixture settles at ~400 MB on Node
+22 and ~3.4 GB on Node 25. Both are stable rather than growing, and neither
+crashes, but 22 is what `.nvmrc` pins and what to prefer if memory is tight.
+
+A grammar's node types are its API, and they differ between sources for the
+same language: `@tree-sitter-grammars/tree-sitter-kotlin` names declarations
+differently from fwcd's and parses `object X { }` as an error, so the two are
+not interchangeable. When a `LanguagePathConfig` stops matching, nothing throws
+— the file simply yields no paths, which shows up as a missing Generate button
+rather than an error. Check a file of that language after changing its grammar.
+
 ## One server, several repositories
 
 Syl holds any number of checkouts at once — one server, one port, and a
