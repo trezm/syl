@@ -20,6 +20,9 @@ export const ANTHROPIC_MODELS: ModelInfo[] = [
  * this be overridden with SYL_OPENAI_MODELS (comma-separated ids).
  */
 export const OPENAI_MODELS: ModelInfo[] = [
+  { id: "gpt-5.6-sol", label: "GPT-5.6 Sol", provider: "openai" },
+  { id: "gpt-5.6-terra", label: "GPT-5.6 Terra", provider: "openai" },
+  { id: "gpt-5.6-luna", label: "GPT-5.6 Luna", provider: "openai" },
   { id: "gpt-5", label: "GPT-5", provider: "openai" },
   { id: "gpt-5-mini", label: "GPT-5 mini", provider: "openai" },
   { id: "gpt-4.1", label: "GPT-4.1", provider: "openai" },
