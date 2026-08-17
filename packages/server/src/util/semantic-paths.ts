@@ -27,6 +27,9 @@ export async function semanticPathsFor(
   }
   const wasmPath = path.join(wasmDir, langConfig.wasmFile);
   const parser = await createParser(wasmPath, treeSitterWasmDir);
+  // parse() returns null only when the parser is cancelled or times out —
+  // neither of which syl asks for, so this is a "can't happen" made explicit.
   const tree = parser.parse(content);
+  if (!tree) throw new Error(`Parsing ${file} produced no syntax tree.`);
   return buildSemanticPaths(tree, content, langConfig);
 }

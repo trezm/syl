@@ -3,3 +3,7 @@ dist/
 .syl/
 *.tsbuildinfo
 .env
+
+# Grammar sources fetched by scripts/build-grammars.mjs. The build product in
+# grammars/ is committed; these downloads are not.
+.grammar-src/

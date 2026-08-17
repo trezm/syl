@@ -1,4 +1,4 @@
-import type { Tree, SyntaxNode } from "web-tree-sitter";
+import type { Tree, Node } from "web-tree-sitter";
 import { LanguagePathConfig } from "./language-config.js";
 import { SemanticNode } from "../annotations/types.js";
 
@@ -21,7 +21,7 @@ export function buildSemanticPaths(
   const lineToPath = new Map<number, string[]>();
 
   function walk(
-    node: SyntaxNode,
+    node: Node,
     parentPath: string,
     siblingCounts: Map<string, number>,
     parentChildren: SemanticNode[]
@@ -95,10 +95,10 @@ function buildTwoPass(
   const lineToPath = new Map<number, string[]>();
 
   // Pass 1: Count sibling names at each level
-  function countNames(node: SyntaxNode, depth: number): Map<SyntaxNode, Map<string, number>> {
-    const result = new Map<SyntaxNode, Map<string, number>>();
+  function countNames(node: Node, depth: number): Map<Node, Map<string, number>> {
+    const result = new Map<Node, Map<string, number>>();
 
-    function walkCount(n: SyntaxNode, parent: SyntaxNode | null): void {
+    function walkCount(n: Node, parent: Node | null): void {
       if (config.pathNodeTypes.includes(n.type)) {
         const name = config.getNodeName(n as any);
         if (name && parent) {
@@ -135,9 +135,9 @@ function buildTwoPass(
 
   // Pass 2: Build paths with disambiguation only when needed
   function walk(
-    node: SyntaxNode,
+    node: Node,
     parentPath: string,
-    parentPathNode: SyntaxNode | null,
+    parentPathNode: Node | null,
     seenCounts: Map<string, number>,
     parentChildren: SemanticNode[]
   ): void {

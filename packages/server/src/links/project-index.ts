@@ -95,6 +95,7 @@ export class ProjectIndex {
         const wasmPath = `${this.grammarWasmDir}/${langConfig.wasmFile}`;
         const parser = await createParser(wasmPath, this.treeSitterWasmDir);
         const tree = parser.parse(content);
+        if (!tree) continue;
         const pathResult = buildSemanticPaths(tree, content, langConfig);
 
         const symbols: SymbolLocation[] = [];
