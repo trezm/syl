@@ -113,6 +113,8 @@ export {
   isReviewStale,
   outdatedComments,
   REVIEW_EVENTS,
+  SYL_REPO_URL,
+  SYL_ATTRIBUTION,
   findingToCommentBody,
   commentTargetKey,
   diffCommentTargets,

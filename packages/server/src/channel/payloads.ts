@@ -76,7 +76,12 @@ export function findingPayload(
     prLine(meta, repo, number),
     `Finding is on ${finding.file}:${finding.line}.`,
     ``,
-    quoted("review finding, written by a model and possibly wrong", findingToCommentBody(finding)),
+    // No attribution line here: the finding isn't going to GitHub, and Claude
+    // already knows it came from syl.
+    quoted(
+      "review finding, written by a model and possibly wrong",
+      findingToCommentBody(finding, { attribution: false })
+    ),
   ];
 
   const hunk = hunkFor(diff, finding.file, finding.line);
