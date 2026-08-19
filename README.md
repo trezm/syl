@@ -259,10 +259,18 @@ can find every listening session and let you pick one. Nothing needs a fixed por
 and nothing needs naming — Claude Code tells each spawned server which session
 and project it belongs to.
 
-It is deliberately **one-way**. The channel exposes no tools, so there is nothing
-for Claude to call back on; you read the answer in the session itself, which is
-where you were working anyway. And nothing is ever sent without a click, which is
-also what keeps GitHub-authored text out of your context by default.
+The answer itself happens in the session — that is where you were working, and a
+terminal is a better place to argue with Claude than a side panel. What comes back
+to syl is a **report**: every push is stamped with a short event id, and the channel
+exposes one tool, `syl_reply`, that Claude calls when it has finished with an event.
+Passing the id back is what lets syl show the summary against the finding or question
+it answers; a report filed without one still shows up, just on its own. The panel
+polls for these, so a push sits marked *no report yet* until one lands.
+
+That is the whole return path. There is no way for you to answer a report from the
+browser, and a `blocked` status is Claude saying it could not get there rather than
+asking for more. And nothing is ever sent without a click, which is also what keeps
+GitHub-authored text out of your context by default.
 
 #### Setting it up
 
@@ -296,6 +304,10 @@ descriptions off GitHub, findings written by a model. All of it is fenced in
 `QUOTED` blocks, and the channel's instructions tell Claude to treat those as data
 rather than as instructions. A `"""` appearing inside a diff can't close the fence
 early. The only unfenced prose is syl's own framing and what you typed.
+
+That cuts the other way too: a `syl_reply` summary is model-written text about
+someone else's pull request, so it is rendered as plain text in the panel and the
+instructions tell Claude not to relay anything a quoted block asked it to say.
 
 The listener is bound to `127.0.0.1` and every push needs a bearer token that
 lives only in the `0600` registry file, so another local process can't put text in

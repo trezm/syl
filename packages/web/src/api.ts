@@ -424,16 +424,40 @@ export async function pushToSession(input: {
   findingIndex?: number;
   message?: string;
   context?: { file?: string | null; line?: number | null; finding?: string | null };
-}): Promise<void> {
+}): Promise<{ eventId: string }> {
   const res = await apiFetch("/api/channel/push", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || "Failed to send to the session");
-  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Failed to send to the session");
+  return { eventId: data.eventId };
+}
+
+/** What a session reported back with `syl_reply` after finishing with an event. */
+export interface ChannelReply {
+  seq: number;
+  eventId: string | null;
+  status: "done" | "blocked";
+  text: string;
+  at: string;
+}
+
+/**
+ * Reports filed since `since`. The buffer lives in the session's own process,
+ * so a session that has exited answers 404 — the caller starts over at 0 when
+ * it picks a different one.
+ */
+export async function fetchChannelReplies(
+  sessionId: string,
+  since: number
+): Promise<{ replies: ChannelReply[]; cursor: number }> {
+  const res = await apiFetch(
+    `/api/channel/replies?sessionId=${encodeURIComponent(sessionId)}&since=${since}`
+  );
+  if (!res.ok) return { replies: [], cursor: since };
+  return res.json();
 }
 
 export interface GenerateStatus {

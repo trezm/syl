@@ -45,26 +45,21 @@ function find(sessionId: string): ChannelEntry {
   return entry;
 }
 
-/**
- * Hands a payload to one session's channel server. A 202 means it reached the
- * transport, not that Claude has read it: channel notifications aren't
- * acknowledged, and the event may sit queued until the session's next turn.
- */
-export async function push(
-  sessionId: string,
-  payload: ChannelPayload
-): Promise<void> {
-  const entry = find(sessionId);
-
+/** Both directions talk to the same loopback server with the same bearer token. */
+async function call(
+  entry: ChannelEntry,
+  path: string,
+  init?: RequestInit
+): Promise<Response> {
   let response: Response;
   try {
-    response = await fetch(`http://127.0.0.1:${entry.port}/push`, {
-      method: "POST",
+    response = await fetch(`http://127.0.0.1:${entry.port}${path}`, {
+      ...init,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${entry.token}`,
+        ...init?.headers,
       },
-      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(5000),
     });
   } catch (e) {
@@ -78,9 +73,55 @@ export async function push(
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new Error(
-      `The channel server rejected the push (${response.status}). ${body}`.trim()
+      `The channel server rejected the request (${response.status}). ${body}`.trim()
     );
   }
+  return response;
+}
+
+/**
+ * Hands a payload to one session's channel server. A 202 means it reached the
+ * transport, not that Claude has read it: channel notifications aren't
+ * acknowledged, and the event may sit queued until the session's next turn.
+ * What confirms it landed is a later `syl_reply` against the same event id.
+ */
+export async function push(
+  sessionId: string,
+  payload: ChannelPayload
+): Promise<void> {
+  await call(find(sessionId), "/push", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** A report Claude filed with `syl_reply`, as the channel server stored it. */
+export interface ChannelReply {
+  seq: number;
+  /** The event it answers, when Claude echoed the id back. */
+  eventId: string | null;
+  status: "done" | "blocked";
+  text: string;
+  at: string;
+}
+
+/**
+ * Reports filed since `since`. The buffer lives in the channel process, so it
+ * empties when the session exits, and a cursor only means anything within one.
+ */
+export async function fetchReplies(
+  sessionId: string,
+  since: number
+): Promise<{ replies: ChannelReply[]; cursor: number }> {
+  const response = await call(
+    find(sessionId),
+    `/replies?since=${encodeURIComponent(String(since))}`
+  );
+  const body = (await response.json()) as {
+    replies?: ChannelReply[];
+    cursor?: number;
+  };
+  return { replies: body.replies ?? [], cursor: body.cursor ?? since };
 }
 
 /** Shown when nothing is listening, so the panel can say how to fix it. */

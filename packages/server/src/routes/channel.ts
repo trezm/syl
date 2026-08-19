@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import type { Finding } from "@syl/core";
 import { sortFindings } from "@syl/core";
 import type { Workspace } from "../projects/workspace.js";
-import { listSessions, push, setupHint } from "../channel/sessions.js";
-import { findingPayload, questionPayload } from "../channel/payloads.js";
+import { fetchReplies, listSessions, push, setupHint } from "../channel/sessions.js";
+import { findingPayload, questionPayload, withEvent } from "../channel/payloads.js";
 
 function messageFor(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -17,6 +17,9 @@ function messageFor(e: unknown): string {
  * Sessions themselves are machine-wide — every Claude Code session on this
  * machine is listed whichever project you are in, and it's `matchesProject`
  * that says which of them is working in the one you're looking at.
+ *
+ * Every push is stamped with an event id, and `/replies` is where whatever
+ * Claude filed against those ids with `syl_reply` comes back.
  */
 export function channelRoutes(workspace: Workspace) {
   const app = new Hono();
@@ -58,18 +61,17 @@ export function channelRoutes(workspace: Workspace) {
         const finding = findings[body.findingIndex ?? -1];
         if (!finding) return c.json({ error: "finding not found" }, 404);
 
-        await push(
-          body.sessionId,
+        const { payload, eventId } = withEvent(
           findingPayload(run.repo, run.number, run.meta, run.diff, finding)
         );
-        return c.json({ sent: "finding", title: finding.title });
+        await push(body.sessionId, payload);
+        return c.json({ sent: "finding", title: finding.title, eventId });
       }
 
       const message = (body.message ?? "").trim();
       if (!message) return c.json({ error: "A message is required." }, 400);
 
-      await push(
-        body.sessionId,
+      const { payload, eventId } = withEvent(
         questionPayload(
           run.repo,
           run.number,
@@ -79,9 +81,27 @@ export function channelRoutes(workspace: Workspace) {
           body.context ?? {}
         )
       );
-      return c.json({ sent: "question" });
+      await push(body.sessionId, payload);
+      return c.json({ sent: "question", eventId });
     } catch (e) {
       return c.json({ error: messageFor(e) }, 400);
+    }
+  });
+
+  // GET /api/channel/replies?sessionId=&since= — reports filed since the cursor
+  app.get("/replies", async (c) => {
+    const sessionId = c.req.query("sessionId");
+    if (!sessionId) return c.json({ error: "sessionId is required" }, 400);
+    const since = Number(c.req.query("since") ?? 0);
+
+    try {
+      return c.json(
+        await fetchReplies(sessionId, Number.isFinite(since) ? since : 0)
+      );
+    } catch (e) {
+      // A session that has exited is the ordinary case here, not an outage —
+      // the panel polls this and drops the cursor when it goes.
+      return c.json({ error: messageFor(e) }, 404);
     }
   });
 
