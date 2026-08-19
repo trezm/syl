@@ -1,7 +1,8 @@
 import { Hono } from "hono";
-import type { ReviewCommentSide, ReviewEvent } from "@syl/core";
+import type { MergeMethod, ReviewCommentSide, ReviewEvent } from "@syl/core";
 import {
   getLanguageForFile,
+  MERGE_METHODS,
   parsePullRequestFilter,
   parseUnifiedDiff,
 } from "@syl/core";
@@ -369,6 +370,48 @@ export function reviewRoutes(
     } catch (e) {
       logFailure(`Original-file generation for run ${run.id}`, e);
       return c.json({ error: describeGhError(e) }, 500);
+    }
+  });
+
+  // GET /api/review/:id/merge-status — what GitHub says about merging this
+  // pull request as it stands: which buttons are live, and why not otherwise
+  app.get("/:id/merge-status", async (c) => {
+    const { runner } = workspace.require(c);
+    try {
+      return c.json({ status: await runner.mergeStatus(c.req.param("id")) });
+    } catch (e) {
+      logFailure(`Reading merge state for run ${c.req.param("id")}`, e);
+      return c.json({ error: describeGhError(e) }, statusFor(e));
+    }
+  });
+
+  // POST /api/review/:id/merge — merge the pull request on GitHub. `headSha`
+  // is the commit the button was rendered against, so a branch that has moved
+  // since is refused rather than merged unseen.
+  app.post("/:id/merge", async (c) => {
+    const { runner } = workspace.require(c);
+    const body = await c.req.json<{ method?: string; headSha?: string | null }>();
+    const method = MERGE_METHODS.find((m) => m.value === body.method)?.value as
+      | MergeMethod
+      | undefined;
+    if (!method) {
+      return c.json(
+        {
+          error: `method must be one of ${MERGE_METHODS.map((m) => m.value).join(", ")}`,
+        },
+        400
+      );
+    }
+
+    try {
+      const { merge } = await runner.merge(c.req.param("id"), {
+        method,
+        expectedHeadSha: body.headSha ?? null,
+      });
+      return c.json({ merge });
+    } catch (e) {
+      logFailure(`Merging pull request for run ${c.req.param("id")}`, e);
+      return c.json({ error: describeGhError(e) }, statusFor(e));
     }
   });
 

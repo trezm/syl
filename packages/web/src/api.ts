@@ -13,6 +13,9 @@ import type {
   PullRequestFilter,
   ReviewRun,
   ReviewRunSummary,
+  MergeMethod,
+  PullRequestMerge,
+  PullRequestMergeStatus,
 } from "@syl/core";
 import { pullRequestFilterQuery } from "@syl/core";
 import type { AvailableModel } from "./components/ModelSelector";
@@ -389,6 +392,35 @@ export async function submitReview(
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Failed to submit review");
   return data.submission;
+}
+
+/** What GitHub says about merging this run's pull request as it stands. */
+export async function fetchMergeStatus(
+  runId: string
+): Promise<PullRequestMergeStatus> {
+  const res = await apiFetch(`/api/review/${runId}/merge-status`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to read the merge state");
+  return data.status;
+}
+
+/**
+ * Merges the pull request on GitHub. `headSha` is the commit the button was
+ * rendered against — GitHub refuses the merge if the branch has moved since,
+ * so a push that lands while the page is open can't be merged unseen.
+ */
+export async function mergePullRequest(
+  runId: string,
+  input: { method: MergeMethod; headSha: string | null }
+): Promise<PullRequestMerge> {
+  const res = await apiFetch(`/api/review/${runId}/merge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to merge the pull request");
+  return data.merge;
 }
 
 // ---- Channel: pushing review events into a Claude Code session ----

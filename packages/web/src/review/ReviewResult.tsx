@@ -19,6 +19,7 @@ import DiffView, {
 } from "./DiffView";
 import type { FindingAnchorState } from "./FindingCard";
 import SubmitReviewPanel from "./SubmitReviewPanel";
+import MergePanel from "./MergePanel";
 import SessionPanel, { useChannelSessions } from "./SessionPanel";
 import { useDiffAnnotations } from "./useDiffAnnotations";
 import {
@@ -619,6 +620,8 @@ export default function ReviewResult({
           />
         )}
       </div>
+
+      <MergePanel run={run} onMerged={onRefresh} />
 
       <SubmitReviewPanel
         run={run}

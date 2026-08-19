@@ -171,6 +171,35 @@ Two things worth knowing:
   PR — before you press it. Drafts are saved with the run, so a server restart
   no longer discards anything unsubmitted.
 
+### Merging it
+
+The bar below the diff, above **Review**, is GitHub's merge box: **Squash and
+merge** and **Merge**, in the place you've just finished reading the pull
+request. Beside them is what GitHub says about merging it right now — how many
+commits are going from which branch into which, and whether they combine
+cleanly — with **recheck** to ask again.
+
+Merging is the one thing on this page that changes the repository rather than
+commenting on it, so neither button merges on the first press. It asks first,
+naming the commit count, the branches and the pull request it is about to
+merge, and only the second press sends anything. The merge itself goes as your
+authenticated `gh` user, exactly as pressing the button on github.com would,
+and can't be undone from Syl.
+
+A button greys out when GitHub would refuse outright — conflicts with the base
+branch, a draft, an already merged or closed pull request, or a method the
+repository has turned off — and says which in its tooltip. Everything else is
+said rather than enforced: branch protection, a failing check, a branch that
+has fallen behind. Whether those actually stop a merge depends on the rules and
+on who is pressing the button, so they show as a warning above the buttons and
+leave the decision where it belongs.
+
+The state is read from GitHub when the panel loads, again whenever a
+**Refresh** brings new commits in, and once more at the moment the merge is
+sent. What goes to GitHub is pinned to the commit the button was rendered
+against, so a push that lands while the page has been sitting open is refused
+by both Syl and GitHub instead of merging something nobody has read.
+
 Model defaults are `claude-haiku-4-5` for the scout and `claude-opus-5` for the
 reviewer, falling back to whatever is actually runnable. Both stages go through
 the `claude`/`codex` CLI when available, so a review costs subscription usage

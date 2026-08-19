@@ -229,6 +229,7 @@ export class ReviewStore {
       run.refreshedAt ??= null;
       run.currentHash ??= run.inputHash;
       run.comments ??= [];
+      run.merged ??= null;
       for (const comment of run.comments) comment.outdatedAt ??= null;
       return run;
     } catch {

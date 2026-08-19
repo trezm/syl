@@ -203,6 +203,127 @@ export const REVIEW_EVENTS: { value: ReviewEvent; label: string; hint: string }[
     },
   ];
 
+/**
+ * How a pull request gets merged. GitHub also offers rebasing; syl offers the
+ * two buttons people actually reach for, and defers to the repository's own
+ * settings for whether either is allowed at all.
+ */
+export type MergeMethod = "squash" | "merge";
+
+export const MERGE_METHODS: {
+  value: MergeMethod;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    value: "squash",
+    label: "Squash and merge",
+    hint: "Combine every commit on the branch into one on the base branch.",
+  },
+  {
+    value: "merge",
+    label: "Merge",
+    hint: "Keep the branch's commits and add a merge commit on top.",
+  },
+];
+
+export function mergeMethodLabel(method: MergeMethod): string {
+  return MERGE_METHODS.find((m) => m.value === method)?.label ?? method;
+}
+
+/** Where a pull request stands, in GitHub's own terms. */
+export type PullRequestState = "OPEN" | "CLOSED" | "MERGED";
+
+/**
+ * Whether the branches can be combined at all. GitHub works this out in the
+ * background, so "unknown" is a real answer and not an error — it means ask
+ * again in a moment.
+ */
+export type Mergeability = "mergeable" | "conflicting" | "unknown";
+
+/**
+ * What GitHub says about merging this pull request right now: enough to decide
+ * which buttons are live, and to say why when they aren't.
+ */
+export interface PullRequestMergeStatus {
+  state: PullRequestState;
+  isDraft: boolean;
+  mergeable: Mergeability;
+  /**
+   * GitHub's `mergeable_state` verbatim — "clean", "blocked", "behind",
+   * "unstable", "dirty", "draft", "has_hooks", "unknown". Only advisory here:
+   * whether a merge is *permitted* is GitHub's call at the moment it's asked,
+   * and an admin may be able to push through a state that blocks everyone else.
+   */
+  mergeStateStatus: string;
+  /** Commits on the branch, so the confirmation can say what it's squashing. */
+  commits: number;
+  base: string;
+  head: string;
+  /**
+   * The commit the state above was read at. Sent back with the merge so a
+   * branch that moves in between is rejected rather than merged unseen.
+   */
+  headSha: string | null;
+  /** The methods this repository allows, as its settings have them. */
+  allowed: MergeMethod[];
+  url: string;
+}
+
+/** Why `method` can't be used, or null when it can. */
+export function mergeBlockReason(
+  status: PullRequestMergeStatus,
+  method: MergeMethod
+): string | null {
+  if (status.state === "MERGED") return "This pull request is already merged.";
+  if (status.state === "CLOSED") {
+    return "This pull request is closed — reopen it on GitHub to merge it.";
+  }
+  if (status.isDraft) {
+    return "This pull request is a draft — mark it ready for review on GitHub first.";
+  }
+  if (status.mergeable === "conflicting") {
+    return `This branch has conflicts with ${status.base} that must be resolved first.`;
+  }
+  if (!status.allowed.includes(method)) {
+    return `${mergeMethodLabel(method)} is turned off for this repository.`;
+  }
+  return null;
+}
+
+/**
+ * Something worth saying before merging, though GitHub may still allow it —
+ * required checks, an outstanding review, or a conflict answer that hasn't
+ * arrived yet. Never a reason to disable a button: whether these block a merge
+ * depends on the branch's rules and on who is pressing it.
+ */
+export function mergeWarning(status: PullRequestMergeStatus): string | null {
+  if (status.state !== "OPEN") return null;
+  if (status.mergeable === "unknown") {
+    return "GitHub is still working out whether this branch merges cleanly.";
+  }
+  switch (status.mergeStateStatus) {
+    case "blocked":
+      return "Branch protection is blocking this merge — a required review or check is outstanding.";
+    case "unstable":
+      return "A required check is failing or still running.";
+    case "behind":
+      return `This branch is behind ${status.base} and may need updating first.`;
+    case "has_hooks":
+      return "This repository runs pre-receive hooks, which may reject the merge.";
+    default:
+      return null;
+  }
+}
+
+/** A merge syl performed, kept with the run that did it. */
+export interface PullRequestMerge {
+  method: MergeMethod;
+  /** The commit the merge produced, as GitHub reported it. */
+  sha: string | null;
+  mergedAt: string;
+}
+
 export type ReviewPhase =
   | "fetching"
   | "scout"
@@ -262,6 +383,12 @@ export interface ReviewRun {
   comments: DraftComment[];
   /** Reviews already posted from this run, newest last. */
   submissions: SubmittedReview[];
+  /**
+   * Set when the pull request was merged from this run. GitHub remains the
+   * authority on whether it is merged — this only records that syl is what
+   * merged it, and how.
+   */
+  merged: PullRequestMerge | null;
 }
 
 /**
