@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Finding, ReviewRun } from "@syl/core";
 import {
+  fetchChannelReplies,
   fetchChannelSessions,
   pushToSession,
+  type ChannelReply,
   type ChannelSession,
   type ChannelSetup,
 } from "../api";
@@ -10,10 +12,11 @@ import {
 /**
  * Hands review context to a Claude Code session you already have running.
  *
- * One-way on purpose: syl pushes a finding or a question over the channel, and
- * you read the answer in the session itself, where you were working anyway.
- * Nothing is ever sent without a click, which is also what keeps GitHub-authored
- * text out of your context by default.
+ * syl pushes a finding or a question over the channel and the real answer
+ * happens in the session, where you were working anyway; what comes back here
+ * is the summary Claude files with `syl_reply` when it has finished, matched to
+ * what was sent by event id. Nothing is ever sent without a click, which is
+ * also what keeps GitHub-authored text out of your context by default.
  */
 
 /** Live sessions, polled — one can appear or exit while a review is open. */
@@ -68,6 +71,28 @@ function Setup({ setup }: { setup: ChannelSetup }) {
   );
 }
 
+function Report({ reply }: { reply: ChannelReply }) {
+  const blocked = reply.status === "blocked";
+  return (
+    <div
+      className={`rounded border p-2 text-[11px] leading-relaxed whitespace-pre-wrap ${
+        blocked
+          ? "border-amber-500/30 bg-amber-500/5 text-amber-100/90"
+          : "border-gray-800 bg-gray-900 text-gray-300"
+      }`}
+    >
+      <div className="text-[10px] uppercase tracking-wide text-gray-600 mb-1">
+        {blocked ? "couldn't finish" : "reported back"} ·{" "}
+        {new Date(reply.at).toLocaleTimeString(undefined, {
+          hour: "numeric",
+          minute: "2-digit",
+        })}
+      </div>
+      {reply.text}
+    </div>
+  );
+}
+
 export default function SessionPanel({
   run,
   activeFinding,
@@ -92,7 +117,12 @@ export default function SessionPanel({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sent, setSent] = useState<{ label: string; at: string }[]>([]);
+  const [sent, setSent] = useState<
+    { eventId: string; label: string; at: string }[]
+  >([]);
+  const [replies, setReplies] = useState<ChannelReply[]>([]);
+  // A cursor, not state: advancing it must not itself schedule another poll.
+  const cursor = useRef(0);
 
   // Default to a session in this project, and re-pick if the chosen one exits.
   useEffect(() => {
@@ -101,12 +131,37 @@ export default function SessionPanel({
     setTarget(preferred?.sessionId ?? null);
   }, [sessions, target]);
 
+  // Each session keeps its own buffer and its own sequence, so switching target
+  // starts over rather than carrying a cursor that means nothing there.
+  useEffect(() => {
+    if (!target) return;
+    cursor.current = 0;
+    setReplies([]);
+
+    let cancelled = false;
+    const poll = async () => {
+      const data = await fetchChannelReplies(target, cursor.current);
+      if (cancelled) return;
+      cursor.current = data.cursor;
+      if (data.replies.length) {
+        setReplies((prev) => [...prev, ...data.replies]);
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(() => void poll(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [target]);
+
   const send = async (kind: "finding" | "question") => {
     if (!target) return;
     setBusy(true);
     setError(null);
     try {
-      await pushToSession({
+      const { eventId } = await pushToSession({
         sessionId: target,
         runId: run.id,
         kind,
@@ -124,6 +179,7 @@ export default function SessionPanel({
       setSent((prev) => [
         ...prev,
         {
+          eventId,
           label: kind === "finding" ? activeFinding?.title ?? "finding" : draft.trim(),
           at: new Date().toLocaleTimeString(undefined, {
             hour: "numeric",
@@ -203,8 +259,8 @@ export default function SessionPanel({
               <span className="font-mono text-gray-500">
                 &lt;channel source="syl"&gt;
               </span>{" "}
-              event. Read the reply where the session is running — this is a
-              one-way channel.
+              event. The answer happens in the session — what lands here is the
+              summary it files when it's finished.
             </p>
 
             {activeFinding && (
@@ -228,15 +284,36 @@ export default function SessionPanel({
               </div>
             )}
 
-            {sent.map((entry, i) => (
-              <div
-                key={i}
-                className="text-[11px] text-gray-500 border-l-2 border-emerald-500/40 pl-2"
-              >
-                <span className="text-gray-600">{entry.at}</span> sent{" "}
-                <span className="text-gray-400">{entry.label}</span>
-              </div>
-            ))}
+            {sent.map((entry) => {
+              const reports = replies.filter((r) => r.eventId === entry.eventId);
+              return (
+                <div
+                  key={entry.eventId}
+                  className="border-l-2 border-emerald-500/40 pl-2 space-y-1.5"
+                >
+                  <div className="text-[11px] text-gray-500">
+                    <span className="text-gray-600">{entry.at}</span> sent{" "}
+                    <span className="text-gray-400">{entry.label}</span>
+                    {reports.length === 0 && (
+                      <span className="text-gray-600"> · no report yet</span>
+                    )}
+                  </div>
+                  {reports.map((reply) => (
+                    <Report key={reply.seq} reply={reply} />
+                  ))}
+                </div>
+              );
+            })}
+
+            {/* Claude filed these without echoing an event id back, or against
+                one from before this panel was opened — still worth showing. */}
+            {replies
+              .filter((r) => !sent.some((entry) => entry.eventId === r.eventId))
+              .map((reply) => (
+                <div key={reply.seq} className="border-l-2 border-gray-700 pl-2">
+                  <Report reply={reply} />
+                </div>
+              ))}
           </div>
 
           <div className="border-t border-gray-800 p-2 space-y-2">

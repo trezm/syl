@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { parseUnifiedDiff, findingToCommentBody } from "@syl/core";
 import type { Finding, PullRequestMeta } from "@syl/core";
 
@@ -15,6 +16,14 @@ import type { Finding, PullRequestMeta } from "@syl/core";
  */
 
 const FENCE = '"""';
+
+/**
+ * Asked for in every payload as well as in the channel's `instructions`, because
+ * the system prompt is read once at startup and an event lands many turns later.
+ */
+const REPORT_BACK =
+  "When you're done, call syl_reply with a short summary and this event's id, " +
+  "so the outcome shows up next to the review.";
 
 function quoted(label: string, body: string): string {
   // Defend the fence itself: a diff or PR description containing """ would
@@ -84,7 +93,7 @@ export function findingPayload(
 
   parts.push(
     ``,
-    `Check whether it's real, and tell me what you'd do about it.`
+    `Check whether it's real, and tell me what you'd do about it. ${REPORT_BACK}`
   );
 
   return {
@@ -134,6 +143,8 @@ export function questionPayload(
       : null;
   if (hunk) parts.push(``, quoted("the diff hunk I'm looking at", hunk));
 
+  parts.push(``, REPORT_BACK);
+
   const channelMeta: Record<string, string> = {
     kind: "question",
     repo,
@@ -143,4 +154,22 @@ export function questionPayload(
   if (context.line) channelMeta.line = String(context.line);
 
   return { content: parts.join("\n"), meta: channelMeta };
+}
+
+/**
+ * Stamps a payload with the id Claude echoes back in a `syl_reply`, so a report
+ * can be shown against the thing that was sent rather than on its own.
+ *
+ * Short because Claude has to copy it out of an attribute by hand; unique only
+ * within one session's buffer of a hundred reports, which is all it needs.
+ */
+export function withEvent(payload: ChannelPayload): {
+  payload: ChannelPayload;
+  eventId: string;
+} {
+  const eventId = randomBytes(4).toString("hex");
+  return {
+    payload: { ...payload, meta: { ...payload.meta, event: eventId } },
+    eventId,
+  };
 }
