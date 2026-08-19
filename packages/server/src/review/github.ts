@@ -1,5 +1,8 @@
 import type {
   GitRemote,
+  MergeMethod,
+  PullRequestMerge,
+  PullRequestMergeStatus,
   PullRequestSummary,
   PullRequestFilter,
   PullRequestInvolvement,
@@ -360,6 +363,110 @@ export async function fetchPullRequestDiff(
   });
 }
 
+/**
+ * The single-pull-request REST endpoint, which answers everything the merge
+ * buttons need in one call — where the pull request stands, whether the
+ * branches combine, and what the branch actually is. `gh pr view` would need
+ * GraphQL's `mergeStateStatus`, which GitHub only serves to users with push
+ * access; this shape comes back to anyone who can read the repository.
+ */
+interface PullRequestApi {
+  state: string;
+  merged: boolean;
+  draft: boolean;
+  /** True, false, or null while GitHub is still working it out. */
+  mergeable: boolean | null;
+  mergeable_state: string;
+  commits: number;
+  base: { ref: string };
+  head: { ref: string; sha: string | null };
+  html_url: string;
+}
+
+interface RepoApi {
+  allow_squash_merge?: boolean;
+  allow_merge_commit?: boolean;
+}
+
+/** Which buttons the repository's own settings permit. */
+function allowedMethods(settings: RepoApi | null): MergeMethod[] {
+  // No answer means no reason to grey anything out — GitHub still refuses a
+  // method it doesn't allow, and says so plainly when it does.
+  if (!settings) return ["squash", "merge"];
+  const allowed: MergeMethod[] = [];
+  if (settings.allow_squash_merge !== false) allowed.push("squash");
+  if (settings.allow_merge_commit !== false) allowed.push("merge");
+  return allowed;
+}
+
+export async function fetchMergeStatus(
+  repo: string,
+  number: number,
+  projectRoot: string
+): Promise<PullRequestMergeStatus> {
+  const [pr, settings] = await Promise.all([
+    gh<PullRequestApi>(["api", `repos/${repo}/pulls/${number}`], projectRoot),
+    // Repository settings are a nicety, not a prerequisite: a token that can
+    // read pull requests but not the repository record still gets buttons.
+    gh<RepoApi>(["api", `repos/${repo}`], projectRoot).catch(() => null),
+  ]);
+
+  return {
+    state: pr.merged ? "MERGED" : pr.state === "closed" ? "CLOSED" : "OPEN",
+    isDraft: pr.draft === true,
+    mergeable:
+      pr.mergeable === null || pr.mergeable === undefined
+        ? "unknown"
+        : pr.mergeable
+          ? "mergeable"
+          : "conflicting",
+    mergeStateStatus: pr.mergeable_state ?? "unknown",
+    commits: pr.commits ?? 0,
+    base: pr.base?.ref ?? "",
+    head: pr.head?.ref ?? "",
+    headSha: pr.head?.sha ?? null,
+    allowed: allowedMethods(settings),
+    url: pr.html_url,
+  };
+}
+
+/**
+ * Merges the pull request, the way pressing the button on github.com does.
+ *
+ * `sha` is the commit the caller was looking at when they pressed it: GitHub
+ * rejects the merge outright if the branch has moved since, so a push that
+ * lands between reading the state and merging can't be merged unseen.
+ */
+export async function mergePullRequest(
+  repo: string,
+  number: number,
+  input: { method: MergeMethod; sha: string | null },
+  projectRoot: string
+): Promise<PullRequestMerge> {
+  const payload: Record<string, string> = { merge_method: input.method };
+  if (input.sha) payload.sha = input.sha;
+
+  const stdout = await run(
+    "gh",
+    ["api", `repos/${repo}/pulls/${number}/merge`, "-X", "PUT", "--input", "-"],
+    { cwd: projectRoot, input: JSON.stringify(payload) }
+  );
+
+  const result = JSON.parse(stdout) as {
+    merged?: boolean;
+    sha?: string;
+    message?: string;
+  };
+  if (result.merged === false) {
+    throw new Error(result.message || "GitHub did not merge the pull request.");
+  }
+  return {
+    method: input.method,
+    sha: result.sha ?? null,
+    mergedAt: new Date().toISOString(),
+  };
+}
+
 export interface SubmitReviewInput {
   body: string;
   event: ReviewEvent;
@@ -480,6 +587,12 @@ export function describeGhError(e: unknown): string {
 
   if (/can not approve your own pull request/i.test(full)) {
     return "GitHub does not allow approving your own pull request — submit as a comment instead.";
+  }
+  if (/head branch was modified/i.test(full)) {
+    return "The branch moved after syl read its state — refresh the review and try the merge again.";
+  }
+  if (/not mergeable|pull request is not mergeable/i.test(full)) {
+    return "GitHub refused the merge: the pull request isn't mergeable as it stands — conflicts, or a required review or check that hasn't passed.";
   }
   if (/must be part of the diff/i.test(full)) {
     return `A comment was anchored to a line GitHub doesn't consider part of the diff. (${details.join("; ") || summary})`;

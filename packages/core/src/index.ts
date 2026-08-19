@@ -99,6 +99,11 @@ export type {
   ReviewEvent,
   DraftComment,
   SubmittedReview,
+  MergeMethod,
+  PullRequestState,
+  Mergeability,
+  PullRequestMergeStatus,
+  PullRequestMerge,
 } from "./review.js";
 export {
   PULL_REQUEST_INVOLVEMENTS,
@@ -118,6 +123,10 @@ export {
   diffCommentTargets,
   canCommentOn,
   anchorForFinding,
+  MERGE_METHODS,
+  mergeMethodLabel,
+  mergeBlockReason,
+  mergeWarning,
 } from "./review.js";
 
 // Resolver
