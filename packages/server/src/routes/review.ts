@@ -5,6 +5,9 @@ import {
   MERGE_METHODS,
   parsePullRequestFilter,
   parseUnifiedDiff,
+  DEFAULT_REPLAY_CHUNK_LINES,
+  MIN_REPLAY_CHUNK_LINES,
+  MAX_REPLAY_CHUNK_LINES,
 } from "@syl/core";
 import {
   listRemotes,
@@ -217,9 +220,8 @@ export function reviewRoutes(
   // with a quick model, so the review tab can replay the work landing
   app.post("/:id/replay", async (c) => {
     const { runner } = workspace.require(c);
-    const body = await c.req
-      .json<{ model?: string; refresh?: boolean }>()
-      .catch(() => ({}) as { model?: string; refresh?: boolean });
+    type ReplayBody = { model?: string; chunkLines?: number; refresh?: boolean };
+    const body = await c.req.json<ReplayBody>().catch(() => ({}) as ReplayBody);
 
     const model = body.model ?? (await defaultReplayModel());
     if (!model) {
@@ -232,9 +234,24 @@ export function reviewRoutes(
       return c.json({ error: `Unknown model "${model}"` }, 400);
     }
 
+    const chunkLines = body.chunkLines ?? DEFAULT_REPLAY_CHUNK_LINES;
+    if (
+      !Number.isInteger(chunkLines) ||
+      chunkLines < MIN_REPLAY_CHUNK_LINES ||
+      chunkLines > MAX_REPLAY_CHUNK_LINES
+    ) {
+      return c.json(
+        {
+          error: `chunkLines must be a whole number between ${MIN_REPLAY_CHUNK_LINES} and ${MAX_REPLAY_CHUNK_LINES}.`,
+        },
+        400
+      );
+    }
+
     try {
       const run = runner.generateReplay(c.req.param("id"), {
         model,
+        chunkLines,
         refresh: body.refresh === true,
       });
       return c.json({ run });

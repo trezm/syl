@@ -3,6 +3,9 @@ import {
   enumerateChangedLines,
   isReplayStale,
   replayStepByLine,
+  DEFAULT_REPLAY_CHUNK_LINES,
+  MIN_REPLAY_CHUNK_LINES,
+  MAX_REPLAY_CHUNK_LINES,
   type DiffFile,
   type DiffLine,
   type DraftComment,
@@ -56,6 +59,42 @@ function quickModelDefault(models: AvailableModel[]): string | null {
     usable[0]?.id ??
     null
   );
+}
+
+const CHUNK_LINES_KEY = "syl-replay-chunk-lines";
+
+/**
+ * The step-size guideline as the input holds it — a string, so a half-typed
+ * number isn't fought — remembered like the model choice is. `value` is the
+ * parsed number when the text is a size the server would accept, else null.
+ */
+function useChunkLines() {
+  const [text, setText] = useState<string>(() => {
+    try {
+      return localStorage.getItem(CHUNK_LINES_KEY) ?? String(DEFAULT_REPLAY_CHUNK_LINES);
+    } catch {
+      return String(DEFAULT_REPLAY_CHUNK_LINES);
+    }
+  });
+
+  const parsed = Number(text);
+  const value =
+    Number.isInteger(parsed) &&
+    parsed >= MIN_REPLAY_CHUNK_LINES &&
+    parsed <= MAX_REPLAY_CHUNK_LINES
+      ? parsed
+      : null;
+
+  const set = (next: string) => {
+    setText(next);
+    try {
+      localStorage.setItem(CHUNK_LINES_KEY, next);
+    } catch {
+      // ignore
+    }
+  };
+
+  return { text, set, value };
 }
 
 function LineText({ line, tokens }: { line: DiffLine; tokens?: Token[] }) {
@@ -424,10 +463,11 @@ function Player({
           </span>
           <span
             className="text-xs text-gray-600 whitespace-nowrap"
-            title="The step order is this model's reconstruction, not the real history"
+            title={`The step order is this model's reconstruction, not the real history. Steps were aimed at 1-${replay.chunkLines} changed lines each.`}
           >
             replayed by {replay.model}
-            {replay.backend && ` (${replay.backend})`}
+            {replay.backend && ` (${replay.backend})`} · ≤{replay.chunkLines}{" "}
+            lines
           </span>
           <button
             className="text-xs px-2 py-1 rounded border border-gray-700 text-gray-400 hover:bg-gray-800 disabled:opacity-40"
@@ -561,6 +601,7 @@ export default function ReplayView({
     quickModelDefault(models),
     "syl-replay-model"
   );
+  const chunkLines = useChunkLines();
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
@@ -574,12 +615,17 @@ export default function ReplayView({
     return () => window.clearInterval(timer);
   }, [replay?.phase, onRefresh]);
 
-  const start = async (refresh: boolean, withModel?: string) => {
+  const start = async (
+    refresh: boolean,
+    withModel?: string,
+    withChunkLines?: number
+  ) => {
     setStarting(true);
     setStartError(null);
     try {
       await buildReplay(run.id, {
         model: withModel ?? model ?? undefined,
+        chunkLines: withChunkLines ?? chunkLines.value ?? undefined,
         refresh,
       });
       await onRefresh();
@@ -634,7 +680,7 @@ export default function ReplayView({
             <button
               className="mt-5 text-xs px-3 py-1.5 rounded border border-blue-500/50 text-blue-300 hover:bg-blue-500/10 disabled:opacity-40"
               disabled={starting}
-              onClick={() => start(true, replay.model)}
+              onClick={() => start(true, replay.model, replay.chunkLines)}
             >
               {starting ? "Rebuilding…" : `Rebuild with ${replay.model}`}
             </button>
@@ -649,7 +695,7 @@ export default function ReplayView({
         files={files}
         replay={replay}
         chunks={replay.chunks}
-        onRebuild={() => start(true, replay.model)}
+        onRebuild={() => start(true, replay.model, replay.chunkLines)}
         rebuilding={starting}
         {...commentHandlers}
       />
@@ -677,11 +723,24 @@ export default function ReplayView({
             {startError ?? replay?.error}
           </div>
         )}
-        <div className="mt-5 flex items-center gap-2">
+        <div className="mt-5 flex items-center gap-2 flex-wrap">
           <ModelSelector models={models} model={model} onSelect={selectModel} />
+          <label className="flex items-center gap-1.5 text-xs text-gray-400">
+            steps of up to
+            <input
+              type="number"
+              min={MIN_REPLAY_CHUNK_LINES}
+              max={MAX_REPLAY_CHUNK_LINES}
+              value={chunkLines.text}
+              onChange={(e) => chunkLines.set(e.target.value)}
+              className="w-16 bg-gray-800 text-gray-300 text-xs border border-gray-700 rounded px-2 py-1 focus:outline-none focus:border-purple-500"
+              title="How many changed lines one step should aim for — a guideline the model may exceed to keep an edit whole"
+            />
+            lines
+          </label>
           <button
             className="text-xs px-3 py-1.5 rounded border border-blue-500/50 text-blue-300 hover:bg-blue-500/10 disabled:opacity-40"
-            disabled={starting || !model}
+            disabled={starting || !model || chunkLines.value === null}
             onClick={() => start(replay?.phase === "failed")}
           >
             {starting
@@ -691,6 +750,12 @@ export default function ReplayView({
                 : "Build replay"}
           </button>
         </div>
+        {chunkLines.value === null && (
+          <p className="mt-2 text-xs text-amber-300">
+            Step size must be a whole number between {MIN_REPLAY_CHUNK_LINES}{" "}
+            and {MAX_REPLAY_CHUNK_LINES}.
+          </p>
+        )}
         {models.filter((m) => m.available).length === 0 && (
           <p className="mt-3 text-xs text-amber-300">
             No model is available — install the claude or codex CLI, or set an

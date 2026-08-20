@@ -143,6 +143,9 @@ export {
   normalizeReplayChunks,
   replayStepByLine,
   REPLAY_SWEEP_TITLE,
+  DEFAULT_REPLAY_CHUNK_LINES,
+  MIN_REPLAY_CHUNK_LINES,
+  MAX_REPLAY_CHUNK_LINES,
 } from "./replay.js";
 
 // Resolver

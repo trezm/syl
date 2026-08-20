@@ -150,12 +150,15 @@ authenticated (`gh auth login`) — it is used for `pr list`, `pr view`,
 A diff is the whole pull request at once; **Replay**, next to the view toggle,
 shows it as it might have been written instead. A quick model — GPT-5.6 Luna
 by default, because narration doesn't need a strong reviewer — divides the
-changed lines into steps, each one coherent piece of the work (up to a few
-dozen lines as a guideline), and orders them as a plausible build-up:
-foundations first, then the logic on them, then the wiring. Scrub the timeline (or press play) and the files fill in step by step,
-each with a title and a sentence or two on what that chunk does; the pane shows
-each file's in-between state, with the current step's lines tinted as they land
-or leave.
+changed lines into steps, each one coherent piece of the work, and orders them
+as a plausible build-up: foundations first, then the logic on them, then the
+wiring. How big a step aims to be is yours to set — the field next to the
+model picker, 50 changed lines by default and remembered like the model choice
+is. It's a guideline the model may exceed to keep an edit whole, not a limit:
+small numbers make a fine-grained story, large ones an overview. Scrub the
+timeline (or press play) and the files fill in step by step, each with a title
+and a sentence or two on what that chunk does; the pane shows each file's
+in-between state, with the current step's lines tinted as they land or leave.
 
 The order is a reconstruction, not history — nothing in a squashed diff says
 what was actually written first, which is why the setup page says "might". What

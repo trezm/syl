@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { ReviewRun, ReviewRunSummary } from "@syl/core";
-import { summarizeRun } from "@syl/core";
+import { summarizeRun, DEFAULT_REPLAY_CHUNK_LINES } from "@syl/core";
 
 type SqliteModule = typeof import("node:sqlite");
 type Database = InstanceType<SqliteModule["DatabaseSync"]>;
@@ -234,6 +234,9 @@ export class ReviewStore {
       // A replay the server died in the middle of can never finish; treating
       // it as absent lets the user simply ask again.
       if (run.replay?.phase === "running") run.replay = null;
+      // Replays stored before the step size was recorded were built under the
+      // guideline that is now the default.
+      if (run.replay) run.replay.chunkLines ??= DEFAULT_REPLAY_CHUNK_LINES;
       for (const comment of run.comments) comment.outdatedAt ??= null;
       return run;
     } catch {

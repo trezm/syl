@@ -339,7 +339,7 @@ export async function fetchReviewFileContext(
  */
 export async function buildReplay(
   runId: string,
-  input: { model?: string; refresh?: boolean } = {}
+  input: { model?: string; chunkLines?: number; refresh?: boolean } = {}
 ): Promise<ReviewRun> {
   const res = await apiFetch(`/api/review/${runId}/replay`, {
     method: "POST",
