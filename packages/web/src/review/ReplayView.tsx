@@ -5,7 +5,9 @@ import {
   replayStepByLine,
   type DiffFile,
   type DiffLine,
+  type DraftComment,
   type ReplayChunk,
+  type ReviewCommentSide,
   type ReviewReplay,
   type ReviewRun,
 } from "@syl/core";
@@ -14,7 +16,26 @@ import ModelSelector, {
   useSelectedModel,
   type AvailableModel,
 } from "../components/ModelSelector";
+import CommentComposer from "./CommentComposer";
+import DraftCommentCard from "./DraftCommentCard";
+import { commentTargetFor, type CommentTarget } from "./DiffView";
 import { useDiffHighlight, type DiffHighlight, type Token } from "./highlight";
+
+/**
+ * The slice of the review's comment handling the replay needs: staging,
+ * editing and discarding drafts. Findings stay the diff view's business.
+ */
+export interface ReplayCommentHandlers {
+  comments: DraftComment[];
+  onAddComment: (input: {
+    path: string;
+    line: number;
+    side: ReviewCommentSide;
+    body: string;
+  }) => Promise<void>;
+  onEditComment: (id: string, body: string) => Promise<void>;
+  onDeleteComment: (id: string) => Promise<void>;
+}
 
 /**
  * Replay is narration, not judgement, so it wants the quick models — the same
@@ -55,52 +76,153 @@ function LineText({ line, tokens }: { line: DiffLine; tokens?: Token[] }) {
  * exist yet, deletions from later steps are still ordinary lines, and the
  * current step's own lines are tinted — green landing, red leaving — so the
  * eye goes to what "just happened".
+ *
+ * Every rendered line takes comments by the diff view's rules — the anchors
+ * are (side, line) pairs in the real diff, so a draft staged here is the same
+ * draft the diff view and the submit bar show. A draft whose line isn't part
+ * of this step's state (a not-yet-written addition, an already-removed
+ * deletion) simply stays out of sight until the timeline reaches it.
  */
 function ReplayFile({
   file,
   stepByLine,
   step,
   anchorLine,
+  comments,
+  onAddComment,
+  onEditComment,
+  onDeleteComment,
 }: {
   file: DiffFile;
   stepByLine: Map<DiffLine, number>;
   step: number;
   anchorLine: DiffLine | null;
-}) {
+} & ReplayCommentHandlers) {
   const highlight: DiffHighlight | null = useDiffHighlight(file);
+  const [composing, setComposing] = useState<CommentTarget | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [composeError, setComposeError] = useState<string | null>(null);
+
+  // Keyed by side so a comment on a deleted line doesn't surface against the
+  // new-file line of the same number — the diff view's own rule.
+  const draftsByTarget = new Map<string, DraftComment[]>();
+  let pending = 0;
+  for (const comment of comments) {
+    if (comment.path !== file.path) continue;
+    pending++;
+    const key = `${comment.side}:${comment.line}`;
+    const list = draftsByTarget.get(key) ?? [];
+    list.push(comment);
+    draftsByTarget.set(key, list);
+  }
+
+  const openComposer = (target: CommentTarget) => {
+    setComposeError(null);
+    setComposing(target);
+  };
 
   const row = (
     line: DiffLine,
     key: string,
     kind: "plain" | "landing" | "leaving"
-  ) => (
-    <tr
-      key={key}
-      id={line === anchorLine ? "replay-current" : undefined}
-      className={
-        kind === "landing"
-          ? "bg-emerald-500/10"
-          : kind === "leaving"
-            ? "bg-red-500/10"
-            : ""
-      }
-    >
-      <td className="pl-3 pr-2 whitespace-pre-wrap break-all text-gray-300 align-top">
-        <span
-          className={
+  ) => {
+    const target = commentTargetFor(line);
+    const targetKey = target ? `${target.side}:${target.line}` : null;
+    const drafts = targetKey ? (draftsByTarget.get(targetKey) ?? []) : [];
+    const composingHere =
+      composing !== null &&
+      targetKey !== null &&
+      `${composing.side}:${composing.line}` === targetKey;
+
+    return (
+      <Fragment key={key}>
+        <tr
+          id={line === anchorLine ? "replay-current" : undefined}
+          className={`group/row ${
             kind === "landing"
-              ? "text-emerald-400"
+              ? "bg-emerald-500/10"
               : kind === "leaving"
-                ? "text-red-400"
-                : "text-gray-700"
-          }
+                ? "bg-red-500/10"
+                : ""
+          }`}
         >
-          {kind === "landing" ? "+" : kind === "leaving" ? "-" : " "}
-        </span>
-        <LineText line={line} tokens={highlight?.get(line)} />
-      </td>
-    </tr>
-  );
+          <td className="relative select-none w-6 border-r border-gray-800/80">
+            {target && (
+              <button
+                className="absolute inset-0 opacity-0 group-hover/row:opacity-100 flex items-center justify-center bg-blue-500/30 text-blue-100 hover:bg-blue-500/60 transition-opacity"
+                title="Comment on this line"
+                onClick={() => openComposer(target)}
+              >
+                +
+              </button>
+            )}
+          </td>
+          <td className="pl-2 pr-3 whitespace-pre-wrap break-all text-gray-300 align-top">
+            <span
+              className={
+                kind === "landing"
+                  ? "text-emerald-400"
+                  : kind === "leaving"
+                    ? "text-red-400"
+                    : "text-gray-700"
+              }
+            >
+              {kind === "landing" ? "+" : kind === "leaving" ? "-" : " "}
+            </span>
+            <LineText line={line} tokens={highlight?.get(line)} />
+          </td>
+        </tr>
+        {(drafts.length > 0 || composingHere) && (
+          <tr>
+            <td colSpan={2} className="bg-gray-950">
+              {drafts.map((comment) => (
+                <DraftCommentCard
+                  key={comment.id}
+                  comment={comment}
+                  onEdit={(body) => onEditComment(comment.id, body)}
+                  onDelete={() => onDeleteComment(comment.id)}
+                />
+              ))}
+              {composingHere && target && (
+                <div className="my-2 mx-3">
+                  <CommentComposer
+                    submitLabel="Add comment"
+                    busy={saving}
+                    onSubmit={async (body) => {
+                      setSaving(true);
+                      setComposeError(null);
+                      try {
+                        await onAddComment({
+                          path: file.path,
+                          line: target.line,
+                          side: target.side,
+                          body,
+                        });
+                        setComposing(null);
+                      } catch (e: any) {
+                        setComposeError(e.message);
+                      } finally {
+                        setSaving(false);
+                      }
+                    }}
+                    onCancel={() => {
+                      setComposing(null);
+                      setComposeError(null);
+                    }}
+                  />
+                  {composeError && (
+                    <p className="mt-1 text-[11px] text-red-300">
+                      {composeError}
+                    </p>
+                  )}
+                </div>
+              )}
+            </td>
+          </tr>
+        )}
+      </Fragment>
+    );
+  };
 
   return (
     <div className="border border-gray-800 rounded-md overflow-hidden mb-4 bg-gray-950">
@@ -110,6 +232,11 @@ function ReplayFile({
             ? `${file.oldPath} → ${file.path}`
             : file.path}
         </span>
+        {pending > 0 && (
+          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-amber-500/40 text-amber-300 whitespace-nowrap">
+            {pending} pending
+          </span>
+        )}
       </div>
       <table className="w-full border-collapse font-mono text-[12px] leading-[1.5]">
         <tbody>
@@ -117,7 +244,10 @@ function ReplayFile({
             <Fragment key={hunkIndex}>
               {hunkIndex > 0 && (
                 <tr>
-                  <td className="px-3 py-0.5 text-[10px] text-gray-600 bg-gray-900/40 border-y border-gray-800/70 select-none">
+                  <td
+                    colSpan={2}
+                    className="px-3 py-0.5 text-[10px] text-gray-600 bg-gray-900/40 border-y border-gray-800/70 select-none"
+                  >
                     ⋯
                   </td>
                 </tr>
@@ -147,13 +277,14 @@ function Player({
   chunks,
   onRebuild,
   rebuilding,
+  ...commentHandlers
 }: {
   files: DiffFile[];
   replay: ReviewReplay;
   chunks: ReplayChunk[];
   onRebuild: () => void;
   rebuilding: boolean;
-}) {
+} & ReplayCommentHandlers) {
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
   const paneRef = useRef<HTMLDivElement>(null);
@@ -392,6 +523,7 @@ function Player({
               stepByLine={stepByLine}
               step={step}
               anchorLine={anchorLine}
+              {...commentHandlers}
             />
           ))}
           {pendingFiles > 0 && (
@@ -416,13 +548,14 @@ export default function ReplayView({
   files,
   models,
   onRefresh,
+  ...commentHandlers
 }: {
   run: ReviewRun;
   /** The run's diff, parsed once by ReviewResult — the same objects it renders. */
   files: DiffFile[];
   models: AvailableModel[];
   onRefresh: () => Promise<void>;
-}) {
+} & ReplayCommentHandlers) {
   const { model, selectModel } = useSelectedModel(
     models,
     quickModelDefault(models),
@@ -518,6 +651,7 @@ export default function ReplayView({
         chunks={replay.chunks}
         onRebuild={() => start(true, replay.model)}
         rebuilding={starting}
+        {...commentHandlers}
       />
     );
   }
