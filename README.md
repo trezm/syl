@@ -171,6 +171,13 @@ without another model call. It's pinned to the diff it was built from: if a
 refresh pulls in new commits, the player steps aside and offers a rebuild
 rather than narrating lines that have moved.
 
+Reviewing doesn't stop while you watch: hovering any line in the player offers
+the same **+** as the diff view, staging a comment on the same anchors — so a
+draft made mid-replay is the one the diff view shows and the **Review** bar
+submits. A draft on a line the current step hasn't written yet (or has already
+removed) stays out of sight until the timeline reaches it; the file header's
+pending count keeps the total honest in the meantime.
+
 ### Posting comments back to GitHub
 
 Findings aren't read-only. Each one has an **Add to review** button that stages
