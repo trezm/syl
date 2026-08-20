@@ -529,10 +529,10 @@ export default function ReplayView({
           Replay this pull request
         </h3>
         <p className="mt-3 text-sm text-gray-400 leading-relaxed">
-          A quick model divides the diff into small steps — a few lines each —
-          and puts them in a plausible build-up order: foundations first, then
-          the logic on top, then the wiring. Scrub the timeline to watch the
-          work land, with a note on what each step does.
+          A quick model divides the diff into steps — each one coherent piece
+          of the work — and puts them in a plausible build-up order:
+          foundations first, then the logic on top, then the wiring. Scrub the
+          timeline to watch the work land, with a note on what each step does.
         </p>
         <p className="mt-2 text-xs text-gray-600">
           The order is a reconstruction, not history — nothing here knows how

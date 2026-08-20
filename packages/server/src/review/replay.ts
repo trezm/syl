@@ -51,8 +51,9 @@ logic built on them, then callers, wiring and UI, then tests and docs. The real
 order is unknown; pick the order that is easiest to follow.
 
 Rules:
-- Aim for roughly 1-10 changed lines per chunk. This is a guideline, not a
-  limit — never cut a coherent statement or block in half just to stay small.
+- Aim for roughly 1-50 changed lines per chunk. This is a guideline, not a
+  limit — a chunk should be one coherent piece of the work, however many lines
+  that takes, and never cut a statement or block in half to fit.
 - A chunk is one contiguous range [start, end] of changed-line numbers within a
   single file. Related lines that are far apart go in separate chunks placed
   next to each other in your ordering.
