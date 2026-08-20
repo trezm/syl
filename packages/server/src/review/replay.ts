@@ -41,7 +41,8 @@ export const REPLAY_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 };
 
-export const REPLAY_SYSTEM = `You reconstruct how a pull request might have been written, so a
+export function replaySystem(chunkLines: number): string {
+  return `You reconstruct how a pull request might have been written, so a
 reviewer can watch the work land step by step instead of reading one wall of diff.
 
 You are given the pull request and its changed lines, each numbered like [12].
@@ -51,9 +52,9 @@ logic built on them, then callers, wiring and UI, then tests and docs. The real
 order is unknown; pick the order that is easiest to follow.
 
 Rules:
-- Aim for roughly 1-50 changed lines per chunk. This is a guideline, not a
-  limit — a chunk should be one coherent piece of the work, however many lines
-  that takes, and never cut a statement or block in half to fit.
+- Aim for roughly 1-${chunkLines} changed lines per chunk. This is a guideline,
+  not a limit — a chunk should be one coherent piece of the work, however many
+  lines that takes, and never cut a statement or block in half to fit.
 - A chunk is one contiguous range [start, end] of changed-line numbers within a
   single file. Related lines that are far apart go in separate chunks placed
   next to each other in your ordering.
@@ -64,6 +65,7 @@ Rules:
   new code and leave the removals unaccounted for.
 - Describe what the chunk does in plain language, as if narrating the author's
   work; don't review it, judge it, or speculate beyond what the code shows.`;
+}
 
 /**
  * Characters of numbered listing sent to the model. Lines past the cap still

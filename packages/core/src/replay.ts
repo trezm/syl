@@ -51,6 +51,16 @@ export interface RawReplayChunk {
 export type ReplayPhase = "running" | "done" | "failed";
 
 /**
+ * Bounds for the step-size guideline — the upper end of the "aim for 1-N
+ * changed lines per chunk" instruction. Shared so the server validates the
+ * same range the UI offers. The minimum is 2 because a guideline of "1-1"
+ * reads as a hard limit, which it deliberately isn't.
+ */
+export const DEFAULT_REPLAY_CHUNK_LINES = 50;
+export const MIN_REPLAY_CHUNK_LINES = 2;
+export const MAX_REPLAY_CHUNK_LINES = 500;
+
+/**
  * A replay of the pull request: the diff divided into small narrated steps in
  * a plausible build-up order. The order is a reconstruction — nothing here
  * knows how the work actually happened — which is the point of saying "might".
@@ -72,6 +82,12 @@ export interface ReviewReplay {
   /** True when the diff was too large to send in full — later steps are the
    *  automatic sweep-up rather than the model's. */
   listingTruncated: boolean;
+  /**
+   * The step-size guideline this replay was asked for: the model was told to
+   * aim for 1 to this many changed lines per chunk. Part of what makes a
+   * stored replay reusable — asking again with a different size rebuilds.
+   */
+  chunkLines: number;
   /** Steps in playback order. Null until the model has answered. */
   chunks: ReplayChunk[] | null;
 }
