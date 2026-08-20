@@ -145,6 +145,32 @@ Requires the [GitHub CLI](https://cli.github.com/) on your `PATH` and
 authenticated (`gh auth login`) — it is used for `pr list`, `pr view`,
 `pr diff`, and posting reviews.
 
+### Replaying the work
+
+A diff is the whole pull request at once; **Replay**, next to the view toggle,
+shows it as it might have been written instead. A quick model — GPT-5.6 Luna
+by default, because narration doesn't need a strong reviewer — divides the
+changed lines into small steps, aiming for a few lines each, and orders them as
+a plausible build-up: foundations first, then the logic on them, then the
+wiring. Scrub the timeline (or press play) and the files fill in step by step,
+each with a title and a sentence or two on what that chunk does; the pane shows
+each file's in-between state, with the current step's lines tinted as they land
+or leave.
+
+The order is a reconstruction, not history — nothing in a squashed diff says
+what was actually written first, which is why the setup page says "might". What
+*is* guaranteed is coverage: every changed line belongs to exactly one step, so
+the last step always leaves you looking at the full pull request. Lines the
+model's steps miss are folded into the neighbouring step, or swept into closing
+"Remaining changes" steps when nothing abuts them; on a diff too large to send
+in full, those closing steps are what covers the unseen tail, and the player
+says so.
+
+The replay is stored with the run, so reopening a cached review brings it back
+without another model call. It's pinned to the diff it was built from: if a
+refresh pulls in new commits, the player steps aside and offers a rebuild
+rather than narrating lines that have moved.
+
 ### Posting comments back to GitHub
 
 Findings aren't read-only. Each one has an **Add to review** button that stages

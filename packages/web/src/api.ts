@@ -332,6 +332,25 @@ export async function fetchReviewFileContext(
   return data;
 }
 
+/**
+ * Asks a quick model to divide the run's diff into small narrated steps. The
+ * server answers immediately with the run; poll it and watch `replay.phase`.
+ * Omitting `model` lets the server pick its quick default.
+ */
+export async function buildReplay(
+  runId: string,
+  input: { model?: string; refresh?: boolean } = {}
+): Promise<ReviewRun> {
+  const res = await apiFetch(`/api/review/${runId}/replay`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to build the replay");
+  return data.run;
+}
+
 export async function addReviewComment(
   runId: string,
   input: {

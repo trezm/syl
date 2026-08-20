@@ -1,4 +1,5 @@
 import type { DiffFile } from "./diff.js";
+import type { ReviewReplay } from "./replay.js";
 
 export type FindingSeverity = "critical" | "high" | "medium" | "low";
 
@@ -379,6 +380,8 @@ export interface ReviewRun {
   refreshedAt: string | null;
   /** Set when the models were skipped in favour of a cached review. */
   reusedFrom: ReviewReuse | null;
+  /** The diff replayed as small narrated steps, once someone has asked for it. */
+  replay: ReviewReplay | null;
   /** Comments staged locally, not yet sent to GitHub. */
   comments: DraftComment[];
   /** Reviews already posted from this run, newest last. */
@@ -406,6 +409,20 @@ export function isReviewStale(run: ReviewRun): boolean {
 
 export function outdatedComments(run: ReviewRun): DraftComment[] {
   return run.comments.filter((c) => c.outdatedAt !== null);
+}
+
+/**
+ * Whether the replay was built against a diff the run has since moved past.
+ * Its step ranges index into that older diff, so playing them over the current
+ * one would tell a story about lines that aren't there.
+ */
+export function isReplayStale(run: ReviewRun): boolean {
+  return (
+    run.replay !== null &&
+    run.replay.diffHash !== null &&
+    run.currentHash !== null &&
+    run.replay.diffHash !== run.currentHash
+  );
 }
 
 /** A row in the run history — everything the picker shows, without the diff. */

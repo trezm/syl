@@ -116,6 +116,7 @@ export {
   sortFindings,
   summarizeRun,
   isReviewStale,
+  isReplayStale,
   outdatedComments,
   REVIEW_EVENTS,
   findingToCommentBody,
@@ -128,6 +129,21 @@ export {
   mergeBlockReason,
   mergeWarning,
 } from "./review.js";
+
+// Replay
+export type {
+  ChangedLine,
+  ReplayChunk,
+  RawReplayChunk,
+  ReplayPhase,
+  ReviewReplay,
+} from "./replay.js";
+export {
+  enumerateChangedLines,
+  normalizeReplayChunks,
+  replayStepByLine,
+  REPLAY_SWEEP_TITLE,
+} from "./replay.js";
 
 // Resolver
 export { resolveAnnotations } from "./annotations/resolver.js";

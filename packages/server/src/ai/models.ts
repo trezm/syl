@@ -127,6 +127,25 @@ export async function defaultReviewModels(): Promise<{
   };
 }
 
+/**
+ * Replay wants speed over depth — the diff is being narrated, not judged — so
+ * the quick models come first, Luna as the canonical pick.
+ */
+export async function defaultReplayModel(): Promise<string | null> {
+  const usable = (await listModels()).filter((m) => m.available);
+  return (
+    [
+      "gpt-5.6-luna",
+      "claude-haiku-4-5",
+      "gpt-5-mini",
+      "claude-sonnet-5",
+      "gpt-4o",
+    ].find((id) => usable.some((m) => m.id === id)) ??
+    usable[0]?.id ??
+    null
+  );
+}
+
 /** The default the UI should preselect: the usual default if runnable, else the first usable model. */
 export async function defaultModelId(): Promise<string | null> {
   const models = await listModels();
