@@ -286,9 +286,10 @@ export interface CommentTarget {
 /**
  * Where a "+" on a unified row places a comment. New-file lines (adds and
  * context) go on the right, deletions on the left — the side GitHub expects for
- * code that no longer exists.
+ * code that no longer exists. The replay view anchors by the same rule, which
+ * is why this is exported.
  */
-function commentTargetFor(line: DiffLine): CommentTarget | null {
+export function commentTargetFor(line: DiffLine): CommentTarget | null {
   if (line.newLine !== null) return { line: line.newLine, side: "RIGHT" };
   if (line.oldLine !== null) return { line: line.oldLine, side: "LEFT" };
   return null;

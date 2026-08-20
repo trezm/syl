@@ -497,6 +497,10 @@ export default function ReviewResult({
             files={files}
             models={models}
             onRefresh={onRefresh}
+            comments={run.comments}
+            onAddComment={commentHandlers.onAddComment}
+            onEditComment={commentHandlers.onEditComment}
+            onDeleteComment={commentHandlers.onDeleteComment}
           />
         ) : (
           <>
