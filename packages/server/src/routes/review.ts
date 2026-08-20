@@ -15,7 +15,11 @@ import {
 import { describeCommandFailure } from "../review/exec.js";
 import { MAX_CONTEXT_LINES } from "../review/runner.js";
 import { MAX_STORED_RUNS } from "../review/store.js";
-import { defaultReviewModels, resolveModel } from "../ai/models.js";
+import {
+  defaultReplayModel,
+  defaultReviewModels,
+  resolveModel,
+} from "../ai/models.js";
 import { generateAnnotations } from "../ai/generate.js";
 import { semanticPathsFor } from "../util/semantic-paths.js";
 import type { Workspace } from "../projects/workspace.js";
@@ -206,6 +210,36 @@ export function reviewRoutes(
     } catch (e) {
       logFailure(`Refreshing review run ${c.req.param("id")}`, e);
       return c.json({ error: describeGhError(e) }, statusFor(e));
+    }
+  });
+
+  // POST /api/review/:id/replay — split the diff into small narrated steps
+  // with a quick model, so the review tab can replay the work landing
+  app.post("/:id/replay", async (c) => {
+    const { runner } = workspace.require(c);
+    const body = await c.req
+      .json<{ model?: string; refresh?: boolean }>()
+      .catch(() => ({}) as { model?: string; refresh?: boolean });
+
+    const model = body.model ?? (await defaultReplayModel());
+    if (!model) {
+      return c.json(
+        { error: "No model is available — set ANTHROPIC_API_KEY or OPENAI_API_KEY." },
+        400
+      );
+    }
+    if (!resolveModel(model)) {
+      return c.json({ error: `Unknown model "${model}"` }, 400);
+    }
+
+    try {
+      const run = runner.generateReplay(c.req.param("id"), {
+        model,
+        refresh: body.refresh === true,
+      });
+      return c.json({ run });
+    } catch (e) {
+      return c.json({ error: messageFor(e) }, statusFor(e));
     }
   });
 

@@ -230,6 +230,10 @@ export class ReviewStore {
       run.currentHash ??= run.inputHash;
       run.comments ??= [];
       run.merged ??= null;
+      run.replay ??= null;
+      // A replay the server died in the middle of can never finish; treating
+      // it as absent lets the user simply ask again.
+      if (run.replay?.phase === "running") run.replay = null;
       for (const comment of run.comments) comment.outdatedAt ??= null;
       return run;
     } catch {

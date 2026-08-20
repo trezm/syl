@@ -20,6 +20,7 @@ import DiffView, {
 import type { FindingAnchorState } from "./FindingCard";
 import SubmitReviewPanel from "./SubmitReviewPanel";
 import MergePanel from "./MergePanel";
+import ReplayView from "./ReplayView";
 import SessionPanel, { useChannelSessions } from "./SessionPanel";
 import { useDiffAnnotations } from "./useDiffAnnotations";
 import {
@@ -64,6 +65,7 @@ export default function ReviewResult({
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [sessionPanelOpen, setSessionPanelOpen] = useState(false);
+  const [replayOpen, setReplayOpen] = useState(false);
   const { sessions, setup } = useChannelSessions();
   const [viewMode, setViewMode] = useState<DiffViewMode>(() => {
     try {
@@ -351,6 +353,18 @@ export default function ReviewResult({
             >
               {refreshing ? "Refreshing…" : "Refresh"}
             </button>
+            <button
+              className={`text-xs px-2 py-1 rounded border ${
+                replayOpen
+                  ? "border-blue-500/60 bg-blue-500/10 text-blue-200"
+                  : "border-gray-700 text-gray-300 hover:bg-gray-800"
+              }`}
+              title="Watch the diff land as small narrated steps — a quick model's reconstruction of how the work might have gone"
+              aria-pressed={replayOpen}
+              onClick={() => setReplayOpen((o) => !o)}
+            >
+              Replay
+            </button>
             {!sessionPanelOpen && (
               <button
                 className="text-xs px-2 py-1 rounded border border-gray-700 text-gray-300 hover:bg-gray-800 flex items-center gap-1.5"
@@ -477,6 +491,15 @@ export default function ReviewResult({
       </div>
 
       <div className="flex-1 overflow-hidden flex">
+        {replayOpen ? (
+          <ReplayView
+            run={run}
+            files={files}
+            models={models}
+            onRefresh={onRefresh}
+          />
+        ) : (
+          <>
         {/* Findings sidebar */}
         <aside className="w-80 flex-shrink-0 border-r border-gray-800 overflow-y-auto bg-gray-950">
           <div className="px-4 py-3 border-b border-gray-800">
@@ -618,6 +641,8 @@ export default function ReviewResult({
             setup={setup}
             onClose={() => setSessionPanelOpen(false)}
           />
+        )}
+          </>
         )}
       </div>
 

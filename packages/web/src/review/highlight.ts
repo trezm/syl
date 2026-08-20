@@ -174,6 +174,13 @@ export async function highlightDiffFile(
 }
 
 /**
+ * A stable default for `extra`: a literal `[]` default would be a new array on
+ * every render, endlessly retriggering the effect below — an infinite re-parse
+ * loop for any caller that has no extra lines to pass.
+ */
+const NO_EXTRA_LINES: DiffLine[] = [];
+
+/**
  * Highlighting for one file's diff, or null until it is ready — the grammar
  * arrives in its own chunk, so the diff renders as plain text first and gains
  * colour a moment later. Expanding the diff re-parses with the newly revealed
@@ -182,7 +189,7 @@ export async function highlightDiffFile(
  */
 export function useDiffHighlight(
   file: DiffFile,
-  extra: DiffLine[] = []
+  extra: DiffLine[] = NO_EXTRA_LINES
 ): DiffHighlight | null {
   const [highlight, setHighlight] = useState<DiffHighlight | null>(null);
 
