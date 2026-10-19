@@ -10,9 +10,10 @@ export interface ModelInfo {
  * Anthropic models. IDs are complete as written — they take no date suffix.
  */
 export const ANTHROPIC_MODELS: ModelInfo[] = [
-  { id: "claude-opus-5", label: "Claude Opus 5", provider: "anthropic" },
-  { id: "claude-sonnet-5", label: "Claude Sonnet 5", provider: "anthropic" },
-  { id: "claude-haiku-4-5", label: "Claude Haiku 4.5", provider: "anthropic" },
+  { id: "claude-fable-5-1", label: "Claude Fable 5.1", provider: "anthropic" },
+  { id: "claude-opus-5-5", label: "Claude Opus 5.5", provider: "anthropic" },
+  { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5", provider: "anthropic" },
+  { id: "claude-haiku-5-5", label: "Claude Haiku 5.5", provider: "anthropic" },
 ];
 
 /**
@@ -34,7 +35,7 @@ export const DEFAULT_MODELS: ModelInfo[] = [
   ...OPENAI_MODELS,
 ];
 
-export const DEFAULT_MODEL_ID = "claude-opus-5";
+export const DEFAULT_MODEL_ID = "claude-opus-5-5";
 
 export const PROVIDER_LABELS: Record<ModelProvider, string> = {
   anthropic: "Claude",

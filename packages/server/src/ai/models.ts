@@ -111,17 +111,17 @@ export async function defaultReviewModels(): Promise<{
 
   return {
     scout: pick([
-      "claude-haiku-4-5",
+      "claude-haiku-5-5",
       "gpt-5.6-luna",
       "gpt-5-mini",
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
       "gpt-4o",
     ]),
     reviewer: pick([
-      "claude-opus-5",
+      "claude-opus-5-5",
       "gpt-5.6-sol",
       "gpt-5",
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
       "gpt-4.1",
     ]),
   };
@@ -136,9 +136,9 @@ export async function defaultReplayModel(): Promise<string | null> {
   return (
     [
       "gpt-5.6-luna",
-      "claude-haiku-4-5",
+      "claude-haiku-5-5",
       "gpt-5-mini",
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
       "gpt-4o",
     ].find((id) => usable.some((m) => m.id === id)) ??
     usable[0]?.id ??

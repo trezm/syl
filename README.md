@@ -238,7 +238,7 @@ sent. What goes to GitHub is pinned to the commit the button was rendered
 against, so a push that lands while the page has been sitting open is refused
 by both Syl and GitHub instead of merging something nobody has read.
 
-Model defaults are `claude-haiku-4-5` for the scout and `claude-opus-5` for the
+Model defaults are `claude-haiku-5-5` for the scout and `claude-opus-5-5` for the
 reviewer, falling back to whatever is actually runnable. Both stages go through
 the `claude`/`codex` CLI when available, so a review costs subscription usage
 rather than API tokens.

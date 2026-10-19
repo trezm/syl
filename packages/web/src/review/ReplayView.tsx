@@ -43,9 +43,9 @@ export interface ReplayCommentHandlers {
  */
 const QUICK_MODEL_PREFERENCE = [
   "gpt-5.6-luna",
-  "claude-haiku-4-5",
+  "claude-haiku-5-5",
   "gpt-5-mini",
-  "claude-sonnet-5",
+  "claude-sonnet-5-5",
   "gpt-4o",
 ];
 
