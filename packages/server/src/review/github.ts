@@ -353,14 +353,82 @@ export async function fetchFileAtRef(options: {
   );
 }
 
+/** GitHub refuses to render a diff past 20,000 lines (HTTP 406). */
+function isDiffTooLarge(e: unknown): boolean {
+  if (!(e instanceof CommandError)) return false;
+  return /exceeded the maximum number of lines|too_large|HTTP 406/i.test(
+    `${e.stderr}\n${e.stdout}\n${e.message}`
+  );
+}
+
 export async function fetchPullRequestDiff(
   repo: string,
   number: number,
   projectRoot: string
 ): Promise<string> {
-  return run("gh", ["pr", "diff", String(number), "-R", repo], {
-    cwd: projectRoot,
-  });
+  try {
+    return await run("gh", ["pr", "diff", String(number), "-R", repo], {
+      cwd: projectRoot,
+    });
+  } catch (e) {
+    if (!isDiffTooLarge(e)) throw e;
+    return diffPullRequestLocally(repo, number, projectRoot);
+  }
+}
+
+/**
+ * The same three-dot diff GitHub would have rendered, computed by git instead.
+ * `pull/N/head` lives on the base repository even for a fork's pull request,
+ * so fetching it from whichever remote points at `repo` brings in the head
+ * side; the base commit comes along with it. Neither gets a local ref — the
+ * objects are only needed for the one `git diff`.
+ */
+async function diffPullRequestLocally(
+  repo: string,
+  number: number,
+  projectRoot: string
+): Promise<string> {
+  const meta = await fetchPullRequestMeta(repo, number, projectRoot);
+  if (!meta.baseSha || !meta.headSha) {
+    throw new Error(
+      `GitHub won't render this pull request's diff (over 20,000 lines), and it reports no base or head commit to diff locally.`
+    );
+  }
+
+  const remote =
+    (await listRemotes(projectRoot)).find((r) => r.repo === repo)?.name ??
+    `https://github.com/${repo}.git`;
+
+  try {
+    await run(
+      "git",
+      [
+        "fetch",
+        "--no-tags",
+        "--no-write-fetch-head",
+        remote,
+        `refs/pull/${number}/head`,
+        meta.base,
+      ],
+      { cwd: projectRoot }
+    );
+  } catch (e) {
+    throw new Error(
+      `GitHub won't render this pull request's diff (over 20,000 lines), and fetching its commits to diff locally failed: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
+
+  return run(
+    "git",
+    [
+      "diff",
+      "--no-color",
+      "--no-ext-diff",
+      "--find-renames",
+      `${meta.baseSha}...${meta.headSha}`,
+    ],
+    { cwd: projectRoot, maxBuffer: 256 * 1024 * 1024 }
+  );
 }
 
 /**
