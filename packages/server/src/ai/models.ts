@@ -1,6 +1,7 @@
 import {
   ANTHROPIC_MODELS,
   OPENAI_MODELS,
+  GEMINI_MODELS,
   DEFAULT_MODEL_ID,
   PROVIDER_ENV_KEYS,
   type ModelInfo,
@@ -33,7 +34,7 @@ export function cliAvailable(provider: ModelProvider): Promise<boolean> {
 }
 
 /**
- * Prefer the CLI: it runs on the user's Claude/Codex subscription rather than
+ * Prefer the CLI: it runs on the user's Claude/Codex/Gemini subscription rather than
  * per-token API billing. SYL_PREFER_SDK=1 flips the order.
  */
 export async function backendFor(
@@ -62,11 +63,11 @@ function openaiModels(): ModelInfo[] {
 
 /** Every model syl knows about, regardless of whether it can run right now. */
 export function knownModels(): ModelInfo[] {
-  return [...ANTHROPIC_MODELS, ...openaiModels()];
+  return [...ANTHROPIC_MODELS, ...openaiModels(), ...GEMINI_MODELS];
 }
 
 export async function listModels(): Promise<AvailableModel[]> {
-  const providers: ModelProvider[] = ["anthropic", "openai"];
+  const providers: ModelProvider[] = ["anthropic", "openai", "gemini"];
   const state = new Map<
     ModelProvider,
     { cli: boolean; sdk: boolean; backend: Backend | null }
@@ -112,17 +113,17 @@ export async function defaultReviewModels(): Promise<{
   return {
     scout: pick([
       "claude-haiku-5-5",
-      "gpt-5.6-luna",
-      "gpt-5-mini",
+      "gpt-6-luna",
+      "gemini-3.8-flash",
       "claude-sonnet-5-5",
-      "gpt-4o",
+      "gpt-5.6-luna",
     ]),
     reviewer: pick([
       "claude-opus-5-5",
-      "gpt-5.6-sol",
-      "gpt-5",
+      "gpt-6-astra",
+      "gemini-4-argon",
       "claude-sonnet-5-5",
-      "gpt-4.1",
+      "gpt-6.1-sol",
     ]),
   };
 }
@@ -135,11 +136,11 @@ export async function defaultReplayModel(): Promise<string | null> {
   const usable = (await listModels()).filter((m) => m.available);
   return (
     [
-      "gpt-5.6-luna",
+      "gpt-6-luna",
       "claude-haiku-5-5",
-      "gpt-5-mini",
+      "gemini-3.8-flash",
+      "gpt-5.6-luna",
       "claude-sonnet-5-5",
-      "gpt-4o",
     ].find((id) => usable.some((m) => m.id === id)) ??
     usable[0]?.id ??
     null

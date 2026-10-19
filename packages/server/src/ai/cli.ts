@@ -2,18 +2,24 @@ import { execFile } from "node:child_process";
 import type { ModelProvider } from "@syl/core";
 import type { JsonCompletionOptions } from "./types.js";
 
-export type CliTool = "claude" | "codex";
+export type CliTool = "claude" | "codex" | "gemini";
 
 /** Which CLI fronts which provider. */
 export const CLI_FOR_PROVIDER: Record<ModelProvider, CliTool> = {
   anthropic: "claude",
   openai: "codex",
+  gemini: "gemini",
 };
 
 function commandFor(tool: CliTool): string {
-  return tool === "claude"
-    ? (process.env.SYL_CLAUDE_COMMAND ?? "claude")
-    : (process.env.SYL_CODEX_COMMAND ?? "codex");
+  switch (tool) {
+    case "claude":
+      return process.env.SYL_CLAUDE_COMMAND ?? "claude";
+    case "codex":
+      return process.env.SYL_CODEX_COMMAND ?? "codex";
+    case "gemini":
+      return process.env.SYL_GEMINI_COMMAND ?? "gemini";
+  }
 }
 
 const MAX_BUFFER = 32 * 1024 * 1024;
@@ -58,6 +64,11 @@ function exec(
 const detectionCache = new Map<CliTool, Promise<boolean>>();
 
 export function detectCli(tool: CliTool): Promise<boolean> {
+  // An installed gemini CLI says nothing about whether it can sign in — Google
+  // has dropped it for individual accounts — so it is only used when asked for.
+  if (tool === "gemini" && process.env.SYL_GEMINI_CLI !== "1") {
+    return Promise.resolve(false);
+  }
   const cached = detectionCache.get(tool);
   if (cached) return cached;
   const probe = exec(commandFor(tool), ["--version"], "", process.cwd())
@@ -215,9 +226,74 @@ ${options.userPrompt}`;
   return extractLastJsonObject(stdout);
 }
 
+/**
+ * Gemini's CLI has no schema flag either, so this mirrors codex: schema in the
+ * prompt (on stdin, which `-p` appends to), JSON recovered from the reply. Plan
+ * mode keeps its tools read-only. SYL_GEMINI_ARGS overrides the flags, with
+ * `{model}` substituted.
+ */
+async function runGemini(options: CliJsonOptions): Promise<unknown> {
+  const template =
+    process.env.SYL_GEMINI_ARGS ??
+    "--model {model} --output-format json --approval-mode plan --skip-trust";
+  const args = [
+    ...template
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((arg) => arg.replace("{model}", options.model)),
+    "-p",
+    options.allowFileTools
+      ? "Read files as needed, then reply with the JSON object only."
+      : "Do not use any tools. Reply with the JSON object only.",
+  ];
+
+  const prompt = `${options.systemPrompt}
+
+Respond with ONLY a JSON object matching this JSON Schema — no markdown fence, no prose:
+${JSON.stringify(options.schema)}
+
+${options.userPrompt}`;
+
+  const { stdout, stderr, code } = await exec(
+    commandFor("gemini"),
+    args,
+    prompt,
+    options.cwd
+  );
+
+  if (!stdout.trim()) {
+    throw new Error(
+      `gemini CLI produced no output (exit ${code}): ${stderr.trim().slice(0, 400)}`
+    );
+  }
+
+  let envelope: any;
+  try {
+    envelope = JSON.parse(stdout);
+  } catch {
+    return extractLastJsonObject(stdout);
+  }
+  if (envelope.error) {
+    throw new Error(
+      `gemini CLI error: ${String(envelope.error.message ?? envelope.error).slice(0, 400)}`
+    );
+  }
+  if (typeof envelope.response === "string") {
+    return extractLastJsonObject(envelope.response);
+  }
+  return extractLastJsonObject(stdout);
+}
+
 export function completeJsonViaCli(
   tool: CliTool,
   options: CliJsonOptions
 ): Promise<unknown> {
-  return tool === "claude" ? runClaude(options) : runCodex(options);
+  switch (tool) {
+    case "claude":
+      return runClaude(options);
+    case "codex":
+      return runCodex(options);
+    case "gemini":
+      return runGemini(options);
+  }
 }

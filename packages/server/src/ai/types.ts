@@ -23,7 +23,7 @@ export interface JsonCompletionOptions {
   userPrompt: string;
   /** JSON Schema the response is constrained to. */
   schema: Record<string, unknown>;
-  /** Schema name — OpenAI requires one; Anthropic ignores it. */
+  /** Schema name — OpenAI requires one; Anthropic and Gemini ignore it. */
   schemaName: string;
 }
 

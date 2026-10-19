@@ -8,7 +8,7 @@ import {
 
 export interface AvailableModel extends ModelInfo {
   available: boolean;
-  /** "cli" runs on your Claude/Codex subscription; "sdk" bills per token. */
+  /** "cli" runs on your Claude/Codex/Gemini subscription; "sdk" bills per token. */
   backend?: "cli" | "sdk" | null;
   cli?: boolean;
   sdk?: boolean;
@@ -17,11 +17,12 @@ export interface AvailableModel extends ModelInfo {
 const CLI_FOR_PROVIDER: Record<ModelProvider, string> = {
   anthropic: "claude",
   openai: "codex",
+  gemini: "gemini",
 };
 
 const STORAGE_KEY = "syl-selected-model";
 
-const PROVIDER_ORDER: ModelProvider[] = ["anthropic", "openai"];
+const PROVIDER_ORDER: ModelProvider[] = ["anthropic", "openai", "gemini"];
 
 /**
  * Tracks the selected model against the server's model list. A stored id that

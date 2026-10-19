@@ -3,10 +3,12 @@ import { CLI_FOR_PROVIDER, completeJsonViaCli } from "./cli.js";
 import type { ProviderCompleteJson } from "./types.js";
 import { completeJsonAnthropic } from "./providers/anthropic.js";
 import { completeJsonOpenAI } from "./providers/openai.js";
+import { completeJsonGemini } from "./providers/gemini.js";
 
 const SDK_COMPLETERS: Record<string, ProviderCompleteJson> = {
   anthropic: completeJsonAnthropic,
   openai: completeJsonOpenAI,
+  gemini: completeJsonGemini,
 };
 
 /** Which backend a given model would run on right now, for reporting. */

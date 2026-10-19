@@ -1,4 +1,4 @@
-import { PROVIDER_AUTHORS } from "@syl/core";
+import { PROVIDER_AUTHORS, type ModelProvider } from "@syl/core";
 import type { AnnotationStore, SemanticPathResult } from "@syl/core";
 import type { ToolContext, SaveAnnotationEntry } from "./tool-executor.js";
 import { singleElementPrompt, fileWidePrompt } from "./prompts.js";
@@ -7,10 +7,12 @@ import { CLI_FOR_PROVIDER, completeJsonViaCli } from "./cli.js";
 import type { ProviderRun } from "./types.js";
 import { runAnthropic } from "./providers/anthropic.js";
 import { runOpenAI } from "./providers/openai.js";
+import { runGemini } from "./providers/gemini.js";
 
 const RUNNERS: Record<string, ProviderRun> = {
   anthropic: runAnthropic,
   openai: runOpenAI,
+  gemini: runGemini,
 };
 
 const ANNOTATION_SCHEMA: Record<string, unknown> = {
@@ -79,7 +81,7 @@ function systemPromptFor(options: GenerateOptions): string {
  */
 async function generateViaCli(
   options: GenerateOptions,
-  provider: "anthropic" | "openai"
+  provider: ModelProvider
 ): Promise<SaveAnnotationEntry[]> {
   const systemPrompt = systemPromptFor(options);
 

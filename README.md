@@ -412,7 +412,7 @@ symbols rather than describe them.
 
 ## AI-Generated Annotations
 
-Syl can draft annotations for you with either Claude or ChatGPT.
+Syl can draft annotations for you with Claude, ChatGPT or Gemini.
 
 **Syl prefers the CLIs.** If [`claude`](https://docs.claude.com/en/docs/claude-code)
 or [`codex`](https://developers.openai.com/codex/cli) is on your `PATH`, model
@@ -424,6 +424,12 @@ CLI installed:
 | --- | --- | --- |
 | Claude | `claude` CLI | `ANTHROPIC_API_KEY` |
 | ChatGPT | `codex` CLI | `OPENAI_API_KEY` |
+| Gemini | `GEMINI_API_KEY` | `gemini` CLI, with `SYL_GEMINI_CLI=1` |
+
+Gemini is the exception: Google no longer lets individual accounts sign in to
+the `gemini` CLI, so having it installed doesn't make it usable. Syl ignores the
+CLI unless you set `SYL_GEMINI_CLI=1`, and `SYL_GEMINI_ARGS` overrides its flags
+the way `SYL_CODEX_ARGS` does for `codex`.
 
 The model picker marks each model `· cli` or `· api` so you can see which one is
 about to bill you, and the review page records the backend used for each stage.
@@ -433,29 +439,31 @@ There are three independent choices, each remembered separately: the annotation
 model, in the annotate tab's header, and the review's **scout** and **reviewer**
 models, above the pull request form. The review's two default to a cheap Claude
 for triage and a strong one for findings, falling back to whatever is actually
-runnable — point either at a GPT model to run that pass through `codex` instead.
+runnable — point either at a GPT or Gemini model to run that pass there instead.
 Re-running a past review reuses the models that review was run with, not the
 ones currently selected.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # only needed without the claude CLI
 export OPENAI_API_KEY=sk-...          # only needed without the codex CLI
+export GEMINI_API_KEY=...             # Gemini's usual path
 ```
 
 | Provider | Models |
 | --- | --- |
-| Claude | Opus 5 (default), Sonnet 5, Haiku 4.5 |
-| ChatGPT | GPT-5.6 Sol, GPT-5.6 Terra, GPT-5.6 Luna, GPT-5, GPT-5 mini, GPT-4.1, GPT-4o |
+| Claude | Fable 5.1, Opus 5.5 (default), Sonnet 5.5, Haiku 5.5 |
+| ChatGPT | GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol, GPT-6 Luna, GPT-5.6 Sol, GPT-5.6 Terra, GPT-5.6 Luna |
+| Gemini | Gemini 4 Argon, Gemini 3.8 Flash, Gemini 3.5 Flash-Lite |
 
 OpenAI model availability varies by account and tier. To use a different set,
 override the list:
 
 ```bash
-SYL_OPENAI_MODELS=gpt-5,o4-mini npm run dev
+SYL_OPENAI_MODELS=gpt-6-sol,gpt-5.4-mini npm run dev
 ```
 
-Generated annotations are stored with an author of `claude` or `chatgpt`, so you
-can tell them apart from your own.
+Generated annotations are stored with an author of `claude`, `chatgpt` or
+`gemini`, so you can tell them apart from your own.
 
 ## Finding Files
 

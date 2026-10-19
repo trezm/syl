@@ -34,6 +34,7 @@ export type { ModelProvider, ModelInfo } from "./models.js";
 export {
   ANTHROPIC_MODELS,
   OPENAI_MODELS,
+  GEMINI_MODELS,
   DEFAULT_MODELS,
   DEFAULT_MODEL_ID,
   PROVIDER_LABELS,

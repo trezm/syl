@@ -42,11 +42,11 @@ export interface ReplayCommentHandlers {
  * order the server's own default uses, resolved against what can actually run.
  */
 const QUICK_MODEL_PREFERENCE = [
-  "gpt-5.6-luna",
+  "gpt-6-luna",
   "claude-haiku-5-5",
-  "gpt-5-mini",
+  "gemini-3.8-flash",
+  "gpt-5.6-luna",
   "claude-sonnet-5-5",
-  "gpt-4o",
 ];
 
 function quickModelDefault(models: AvailableModel[]): string | null {
